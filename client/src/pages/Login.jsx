@@ -30,7 +30,7 @@ export default function Login() {
     setLoading(true)
     try {
       const res = await loginPatient({ userId: form.userId })
-      if (res.data.result) {
+      if (res.data.statusCode === 200 || res.data.userID) {
         login({ userId: form.userId, role: form.role })
         toast.success('Đăng nhập thành công!')
         navigate('/')

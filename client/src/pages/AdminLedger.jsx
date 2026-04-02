@@ -14,9 +14,11 @@ export default function AdminLedger() {
     setLoading(true)
     try {
       const res = await fetchLedger({ userId: user.userId, args: [] })
-      const data = JSON.parse(res.data.result || '[]')
-      setLedger(Array.isArray(data) ? data : [data])
-      toast.success(`Đã tải ${Array.isArray(data) ? data.length : 1} bản ghi`)
+      let raw = res.data.data
+      const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw
+      const list = Array.isArray(data) ? data : [data]
+      setLedger(list)
+      toast.success(`Đã tải ${list.length} bản ghi`)
     } catch (err) {
       toast.error(err.response?.data?.error || 'Lỗi tải sổ cái')
     } finally {

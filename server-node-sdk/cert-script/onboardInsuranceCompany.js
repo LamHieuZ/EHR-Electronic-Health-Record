@@ -51,12 +51,20 @@ async function main() {
             affiliation: 'org2.department1',
             enrollmentID: 'insuranceCompany01',
             role: 'client',
-            attrs: [{ name: 'role', value: 'insuranceAdmin', ecert: true },{ name: 'uuid', value: 'insuranceCompany01', ecert: true }],
+            attrs: [
+                { name: 'role', value: 'insuranceAdmin', ecert: true },
+                { name: 'uuid', value: 'insuranceCompany01', ecert: true },
+                { name: 'companyId', value: 'insuranceCompany01', ecert: true }
+            ],
         }, adminUser);
         const enrollment = await ca.enroll({
             enrollmentID: 'insuranceCompany01',
             enrollmentSecret: secret,
-            attr_reqs: [{ name: "role", optional: false },{ name: "uuid", optional: false }]
+            attr_reqs: [
+                { name: "role", optional: false },
+                { name: "uuid", optional: false },
+                { name: "companyId", optional: false }
+            ]
         });
         const x509Identity = {
             credentials: {
@@ -68,6 +76,17 @@ async function main() {
         };
         await wallet.put('insuranceCompany01', x509Identity);
         console.log('Successfully registered and enrolled insuranceAdmin user "insuranceCompany01" and imported it into the wallet');
+
+        // Ghi insurance company len blockchain
+        const gateway = new Gateway();
+        await gateway.connect(ccp, { wallet, identity: 'insuranceCompany01', discovery: { enabled: true, asLocalhost: true } });
+        const network = await gateway.getNetwork('mychannel');
+        const contract = network.getContract('ehrChainCode');
+        const args = { companyId: "insuranceCompany01", name: "Bao Hiem XYZ", city: "Ha Noi" };
+        const res = await contract.submitTransaction('onboardInsuranceCompany', JSON.stringify(args));
+        console.log("\n === Onboard Insurance Company success === \n", res.toString());
+        gateway.disconnect();
+
     } catch (error) {
         console.error(`Failed to register user "insuranceCompany01": ${error}`);
         process.exit(1);

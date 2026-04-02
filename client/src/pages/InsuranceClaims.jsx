@@ -29,7 +29,7 @@ export default function InsuranceClaims() {
     setLoading(true)
     try {
       const res = await getClaimsByPatient({ userId: user.userId, args: [searchId] })
-      setClaims(JSON.parse(res.data.result || '[]'))
+      setClaims(JSON.parse(res.data.data || '[]'))
     } catch {
       toast.error('Lỗi tải yêu cầu bảo hiểm')
     } finally {
@@ -45,7 +45,7 @@ export default function InsuranceClaims() {
         userId: user.userId,
         args: [form.patientId, form.recordId, form.claimType, form.amount, form.description],
       })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success('Tạo yêu cầu bảo hiểm thành công!')
         setShowCreate(false)
         setForm({ patientId: '', recordId: '', claimType: 'hospitalization', amount: '', description: '' })
@@ -69,7 +69,7 @@ export default function InsuranceClaims() {
         userId: user.userId,
         args: [reviewForm.patientId, reviewForm.claimId, reviewForm.notes],
       })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success(action === 'approve' ? 'Đã duyệt!' : 'Đã từ chối!')
         setReviewForm(null)
         loadClaims()

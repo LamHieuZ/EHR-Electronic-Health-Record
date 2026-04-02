@@ -21,7 +21,7 @@ export default function ResearchConsent() {
     setLoading(true)
     try {
       const res = await requestConsent({ userId: user.userId, args: [user.userId, reqForm.patientId, reqForm.purpose] })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success('Đã gửi yêu cầu đồng ý nghiên cứu!')
         setReqForm({ patientId: '', purpose: '' })
       } else {
@@ -39,7 +39,7 @@ export default function ResearchConsent() {
     setLoading(true)
     try {
       const res = await approveConsent({ userId: user.userId, args: [user.userId, approveForm.requestId, approved.toString()] })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success(approved ? 'Đã đồng ý!' : 'Đã từ chối!')
         setApproveForm({ requestId: '', approved: true })
       } else {
@@ -57,7 +57,7 @@ export default function ResearchConsent() {
     setLoading(true)
     try {
       const res = await getAnonymizedData({ userId: user.userId, args: [user.userId, anonForm.patientId] })
-      setAnonData(JSON.parse(res.data.result || 'null'))
+      setAnonData(JSON.parse(res.data.data || 'null'))
     } catch (err) {
       toast.error(err.response?.data?.error || 'Không có quyền hoặc chưa được đồng ý')
     } finally {

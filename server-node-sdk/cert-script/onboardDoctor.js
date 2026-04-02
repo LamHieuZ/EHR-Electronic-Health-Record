@@ -51,12 +51,20 @@ async function main() {
             affiliation: 'org1.department1',
             enrollmentID: 'Doctor-Rama04',
             role: 'client',
-            attrs: [{ name: 'role', value: 'doctor', ecert: true },{ name: 'uuid', value: 'Doctor-Rama04', ecert: true }],
+            attrs: [
+                { name: 'role', value: 'doctor', ecert: true },
+                { name: 'uuid', value: 'Doctor-Rama04', ecert: true },
+                { name: 'hospitalId', value: 'Hospital01', ecert: true }
+            ],
         }, adminUser);
         const enrollment = await ca.enroll({
             enrollmentID: 'Doctor-Rama04',
             enrollmentSecret: secret,
-            attr_reqs: [{ name: "role", optional: false },{ name: "uuid", optional: false }]
+            attr_reqs: [
+                { name: "role", optional: false },
+                { name: "uuid", optional: false },
+                { name: "hospitalId", optional: false }
+            ]
         });
         const x509Identity = {
             credentials: {
@@ -87,7 +95,6 @@ async function main() {
 
                 const args = {
                     doctorId: "Doctor-Rama04",
-                    hospitalName: "Hospital01-ABC",
                     name: "Dr. Raj",
                     city: "Pune"
                 };  

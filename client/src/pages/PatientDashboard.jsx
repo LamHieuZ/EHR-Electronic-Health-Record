@@ -23,10 +23,10 @@ export default function PatientDashboard() {
         getRewardsByPatient({ userId: user.userId, args: [user.userId] }),
       ])
 
-      const records = recordsRes.status === 'fulfilled' ? JSON.parse(recordsRes.value.data.result || '[]') : []
-      const prescriptions = prescRes.status === 'fulfilled' ? JSON.parse(prescRes.value.data.result || '[]') : []
-      const claims = claimsRes.status === 'fulfilled' ? JSON.parse(claimsRes.value.data.result || '[]') : []
-      const rewards = rewardsRes.status === 'fulfilled' ? JSON.parse(rewardsRes.value.data.result || '[]') : []
+      const records = recordsRes.status === 'fulfilled' ? JSON.parse(recordsRes.value.data.data || '[]') : []
+      const prescriptions = prescRes.status === 'fulfilled' ? JSON.parse(prescRes.value.data.data || '[]') : []
+      const claims = claimsRes.status === 'fulfilled' ? JSON.parse(claimsRes.value.data.data || '[]') : []
+      const rewards = rewardsRes.status === 'fulfilled' ? JSON.parse(rewardsRes.value.data.data || '[]') : []
 
       setStats({
         records: records.length,

@@ -18,7 +18,7 @@ export default function EmergencyLogs() {
     setLoading(true)
     try {
       const res = await emergencyAccess({ userId: user.userId, args: [patientId, reason] })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success('Truy cập khẩn cấp đã được ghi nhận')
         setReason('')
       } else {
@@ -36,7 +36,7 @@ export default function EmergencyLogs() {
     setLoading(true)
     try {
       const res = await getEmergencyLogs({ userId: user.userId, args: [patientId] })
-      setLogs(JSON.parse(res.data.result || '[]'))
+      setLogs(JSON.parse(res.data.data || '[]'))
     } catch {
       toast.error('Lỗi tải nhật ký')
     } finally {

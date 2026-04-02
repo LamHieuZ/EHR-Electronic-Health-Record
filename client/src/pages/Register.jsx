@@ -6,8 +6,6 @@ import { FiActivity, FiUser, FiUserPlus, FiCalendar, FiMapPin } from 'react-icon
 
 export default function Register() {
   const [form, setForm] = useState({
-    adminId: '',
-    doctorId: '',
     patientId: '',
     name: '',
     dob: '',
@@ -18,19 +16,19 @@ export default function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.adminId || !form.doctorId || !form.patientId || !form.name) {
+    if (!form.patientId || !form.name) {
       toast.error('Vui lòng điền đầy đủ thông tin bắt buộc')
       return
     }
     setLoading(true)
     try {
       const res = await registerPatient({
-        adminId: form.adminId,
-        doctorId: form.doctorId,
-        patientId: form.patientId,
-        args: [form.patientId, form.name, form.dob, form.city],
+        userId: form.patientId,
+        name: form.name,
+        dob: form.dob,
+        city: form.city,
       })
-      if (res.data.result) {
+      if (res.data.statusCode === 200 || res.data.userID) {
         toast.success('Đăng ký thành công! Vui lòng đăng nhập.')
         navigate('/login')
       } else {
@@ -58,17 +56,6 @@ export default function Register() {
 
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Admin ID *</label>
-                <input type="text" value={form.adminId} onChange={(e) => update('adminId', e.target.value)} className="input-field" placeholder="admin1" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Doctor ID *</label>
-                <input type="text" value={form.doctorId} onChange={(e) => update('doctorId', e.target.value)} className="input-field" placeholder="doctor1" />
-              </div>
-            </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
               <div className="relative">

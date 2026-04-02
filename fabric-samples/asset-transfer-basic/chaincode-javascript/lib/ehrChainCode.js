@@ -22,6 +22,14 @@ class ehrChainCode extends Contract {
     // ===========================================================================================
     // DATA STRUCTURES (Chuẩn hóa theo ICD-10 & ATC code):
     //
+    // hospital-{hospitalId}: { hospitalId, name, city, createdBy, timestamp }
+    //
+    // doctor-{doctorId}: { doctorId, hospitalId, name, city, timestamp }
+    //
+    // pharmacy-{pharmacyId}: { pharmacyId, hospitalId, name, city, timestamp }
+    //
+    // insurance-{companyId}: { companyId, name, city, timestamp }
+    //
     // patient-{patientId}: {
     //     patientId, name, dob, city,
     //     authorizedDoctors: ["D001", "D002"],
@@ -29,27 +37,14 @@ class ehrChainCode extends Contract {
     // }
     //
     // record (composite key: record/{patientId}/{recordId}): {
-    //     recordId, patientId, doctorId,
-    //     diagnosis: {
-    //         primary: { icdCode: "J11", description: "Influenza" },
-    //         secondary: [{ icdCode: "R50.9", description: "Fever" }],
-    //         notes: "free text"
-    //     },
-    //     prescription: {
-    //         medications: [{
-    //             drugCode: "N02BE01",    // ATC code
-    //             drugName: "Paracetamol", // Generic name
-    //             strength: "500",
-    //             unit: "mg",
-    //             dosage: { quantity: 1, frequency: 3, route: "oral", timing: "after_meal", duration: 5, durationUnit: "days" }
-    //         }],
-    //         notes: "free text"
-    //     },
+    //     recordId, patientId, doctorId, hospitalId,
+    //     diagnosis: { primary: { icdCode, description }, secondary: [...], notes },
+    //     prescription: { medications: [{ drugCode (ATC), drugName, strength, unit, dosage }], notes },
     //     timestamp, updatedAt, version
     // }
     //
     // claim (composite key: claim/{patientId}/{claimId}): {
-    //     claimId, patientId, recordId, agentId,
+    //     claimId, patientId, recordId, companyId,
     //     claimType, amount, description,
     //     status: "pending" | "approved" | "rejected",
     //     reviewedBy, reviewNotes, timestamp, updatedAt
@@ -72,7 +67,7 @@ class ehrChainCode extends Contract {
         return `record-${txId}`;
     }
 
-    // Lay role va uuid tu client certificate
+    // Lay role, uuid, hospitalId, companyId tu client certificate
     getCallerAttributes(ctx) {
         const role = ctx.clientIdentity.getAttributeValue('role');
         const uuid = ctx.clientIdentity.getAttributeValue('uuid');
@@ -81,7 +76,10 @@ class ehrChainCode extends Contract {
             throw new Error('Missing role or uuid in client certificate');
         }
 
-        return { role, uuid };
+        const hospitalId = ctx.clientIdentity.getAttributeValue('hospitalId') || '';
+        const companyId = ctx.clientIdentity.getAttributeValue('companyId') || '';
+
+        return { role, uuid, hospitalId, companyId };
     }
 
     // Lay timestamp chuan ISO tu transaction
@@ -205,64 +203,136 @@ class ehrChainCode extends Contract {
     // ONBOARDING FUNCTIONS
     // ===========================================================================================
 
-    // Dang ky bac si vao ledger - chi hospital moi co quyen
-    async onboardDoctor(ctx, args) {
-        const { doctorId, hospitalName, name, city } = JSON.parse(args);
+    // Dang ky benh vien vao ledger - chi hospital admin moi co quyen
+    async onboardHospital(ctx, args) {
+        const { hospitalId, name, city } = JSON.parse(args);
         const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-        const orgMSP = ctx.clientIdentity.getMSPID();
 
-        if (orgMSP !== 'Org1MSP' || role !== 'hospital') {
-            throw new Error('Only hospital can onboard doctor.');
+        if (role !== 'hospital') {
+            throw new Error('Only hospital admin can onboard hospital');
         }
 
-        const doctorJSON = await ctx.stub.getState(doctorId);
-        if (doctorJSON && doctorJSON.length > 0) {
-            throw new Error(`Doctor ${doctorId} already registered by ${callerId}`);
+        const key = `hospital-${hospitalId}`;
+        const existing = await ctx.stub.getState(key);
+        if (existing && existing.length > 0) {
+            throw new Error(`Hospital ${hospitalId} already exists`);
         }
 
-        const recordId = this.recordIdGenerator(ctx);
-        const record = {
-            recordId,
-            doctorId,
-            hospitalId: callerId,
-            name,
-            hospitalName,
-            city,
+        const hospital = {
+            hospitalId, name, city,
+            createdBy: callerId,
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(doctorId, Buffer.from(stringify(record)));
-        return stringify(record);
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(hospital)));
+        return JSON.stringify({ message: `Hospital ${hospitalId} registered`, data: hospital });
     }
 
-    // Dang ky dai ly bao hiem - chi insurance admin moi co quyen
-    async onboardInsurance(ctx, args) {
-        const { agentId, insuranceCompany, name, city } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-        const orgMSP = ctx.clientIdentity.getMSPID();
+    // Dang ky bac si vao ledger - chi hospital moi co quyen
+    // Bac si se thuoc ve hospitalId cua nguoi tao
+    async onboardDoctor(ctx, args) {
+        const { doctorId, name, city } = JSON.parse(args);
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
 
-        if (orgMSP !== 'Org2MSP' || role !== 'insuranceAdmin') {
-            throw new Error('Only insurance org admin can onboard insurance agent');
+        if (role !== 'hospital') {
+            throw new Error('Only hospital can onboard doctor');
         }
 
-        const insuranceJSON = await ctx.stub.getState(agentId);
-        if (insuranceJSON && insuranceJSON.length > 0) {
-            throw new Error(`Insurance ${agentId} already registered by ${callerId}`);
+        const key = `doctor-${doctorId}`;
+        const existing = await ctx.stub.getState(key);
+        if (existing && existing.length > 0) {
+            throw new Error(`Doctor ${doctorId} already registered`);
         }
 
-        const recordId = this.recordIdGenerator(ctx);
-        const record = {
-            recordId,
-            agentId,
-            insuranceId: callerId,
-            name,
-            insuranceCompany,
-            city,
+        const doctor = {
+            doctorId,
+            hospitalId: hospitalId || callerId,
+            name, city,
+            createdBy: callerId,
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(agentId, Buffer.from(stringify(record)));
-        return stringify(record);
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(doctor)));
+        return JSON.stringify({ message: `Doctor ${doctorId} registered at hospital ${doctor.hospitalId}`, data: doctor });
+    }
+
+    // Dang ky cong ty bao hiem vao ledger
+    async onboardInsuranceCompany(ctx, args) {
+        const { companyId, name, city } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        if (role !== 'insuranceAdmin') {
+            throw new Error('Only insurance admin can onboard insurance company');
+        }
+
+        const key = `insurance-${companyId}`;
+        const existing = await ctx.stub.getState(key);
+        if (existing && existing.length > 0) {
+            throw new Error(`Insurance company ${companyId} already exists`);
+        }
+
+        const company = {
+            companyId, name, city,
+            createdBy: callerId,
+            timestamp: this.getTimestamp(ctx)
+        };
+
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(company)));
+        return JSON.stringify({ message: `Insurance company ${companyId} registered`, data: company });
+    }
+
+    // Dang ky dai ly bao hiem - thuoc ve companyId cua nguoi tao
+    async onboardInsurance(ctx, args) {
+        const { agentId, name, city } = JSON.parse(args);
+        const { role, uuid: callerId, companyId } = this.getCallerAttributes(ctx);
+
+        if (role !== 'insuranceAdmin') {
+            throw new Error('Only insurance admin can onboard insurance agent');
+        }
+
+        const key = `agent-${agentId}`;
+        const existing = await ctx.stub.getState(key);
+        if (existing && existing.length > 0) {
+            throw new Error(`Agent ${agentId} already registered`);
+        }
+
+        const agent = {
+            agentId,
+            companyId: companyId || callerId,
+            name, city,
+            createdBy: callerId,
+            timestamp: this.getTimestamp(ctx)
+        };
+
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(agent)));
+        return JSON.stringify({ message: `Agent ${agentId} registered at company ${agent.companyId}`, data: agent });
+    }
+
+    // Dang ky nha thuoc vao ledger - chi hospital moi co quyen
+    async onboardPharmacy(ctx, args) {
+        const { pharmacyId, name, city } = JSON.parse(args);
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
+
+        if (role !== 'hospital') {
+            throw new Error('Only hospital can onboard pharmacy');
+        }
+
+        const key = `pharmacy-${pharmacyId}`;
+        const existing = await ctx.stub.getState(key);
+        if (existing && existing.length > 0) {
+            throw new Error(`Pharmacy ${pharmacyId} already exists`);
+        }
+
+        const pharmacy = {
+            pharmacyId,
+            hospitalId: hospitalId || callerId,
+            name, city,
+            createdBy: callerId,
+            timestamp: this.getTimestamp(ctx)
+        };
+
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(pharmacy)));
+        return JSON.stringify({ message: `Pharmacy ${pharmacyId} registered`, data: pharmacy });
     }
 
     // Dang ky benh nhan vao ledger
@@ -388,7 +458,7 @@ class ehrChainCode extends Contract {
     // Chi bac si duoc benh nhan cap quyen moi co the them
     async addRecord(ctx, args) {
         const { patientId, diagnosis, prescription } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
 
         if (role !== 'doctor') {
             throw new Error('Only doctors can add records');
@@ -420,6 +490,7 @@ class ehrChainCode extends Contract {
             recordId,
             patientId,
             doctorId: callerId,
+            hospitalId: hospitalId || '',
             diagnosis,
             prescription,
             timestamp,
@@ -528,6 +599,62 @@ class ehrChainCode extends Contract {
             }
         }
 
+        return JSON.stringify(results);
+    }
+
+    // Lay tat ca benh vien
+    async getAllHospitals(ctx) {
+        const iterator = await ctx.stub.getStateByRange('', '');
+        const results = [];
+        for await (const res of iterator) {
+            if (res.key.startsWith('hospital-')) {
+                results.push(JSON.parse(res.value.toString()));
+            }
+        }
+        return JSON.stringify(results);
+    }
+
+    // Lay tat ca bac si (hoac theo hospitalId)
+    async getAllDoctors(ctx, args) {
+        const { hospitalId } = args ? JSON.parse(args) : {};
+        const iterator = await ctx.stub.getStateByRange('', '');
+        const results = [];
+        for await (const res of iterator) {
+            if (res.key.startsWith('doctor-')) {
+                const doctor = JSON.parse(res.value.toString());
+                if (!hospitalId || doctor.hospitalId === hospitalId) {
+                    results.push(doctor);
+                }
+            }
+        }
+        return JSON.stringify(results);
+    }
+
+    // Lay tat ca nha thuoc (hoac theo hospitalId)
+    async getAllPharmacies(ctx, args) {
+        const { hospitalId } = args ? JSON.parse(args) : {};
+        const iterator = await ctx.stub.getStateByRange('', '');
+        const results = [];
+        for await (const res of iterator) {
+            if (res.key.startsWith('pharmacy-')) {
+                const pharmacy = JSON.parse(res.value.toString());
+                if (!hospitalId || pharmacy.hospitalId === hospitalId) {
+                    results.push(pharmacy);
+                }
+            }
+        }
+        return JSON.stringify(results);
+    }
+
+    // Lay tat ca cong ty bao hiem
+    async getAllInsuranceCompanies(ctx) {
+        const iterator = await ctx.stub.getStateByRange('', '');
+        const results = [];
+        for await (const res of iterator) {
+            if (res.key.startsWith('insurance-')) {
+                results.push(JSON.parse(res.value.toString()));
+            }
+        }
         return JSON.stringify(results);
     }
 
@@ -769,7 +896,7 @@ class ehrChainCode extends Contract {
     // Dai ly bao hiem DUYET claim
     async approveClaim(ctx, args) {
         const { patientId, claimId, reviewNotes } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+        const { role, uuid: callerId, companyId } = this.getCallerAttributes(ctx);
 
         if (role !== 'agent' && role !== 'insuranceAdmin') {
             throw new Error('Only insurance agent or admin can approve claims');
@@ -788,6 +915,7 @@ class ehrChainCode extends Contract {
 
         claim.status = 'approved';
         claim.reviewedBy = callerId;
+        claim.reviewedByCompany = companyId || '';
         claim.reviewNotes = reviewNotes || '';
         claim.updatedAt = this.getTimestamp(ctx);
 
@@ -798,7 +926,7 @@ class ehrChainCode extends Contract {
     // Dai ly bao hiem TU CHOI claim
     async rejectClaim(ctx, args) {
         const { patientId, claimId, reviewNotes } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+        const { role, uuid: callerId, companyId } = this.getCallerAttributes(ctx);
 
         if (role !== 'agent' && role !== 'insuranceAdmin') {
             throw new Error('Only insurance agent or admin can reject claims');
@@ -817,6 +945,7 @@ class ehrChainCode extends Contract {
 
         claim.status = 'rejected';
         claim.reviewedBy = callerId;
+        claim.reviewedByCompany = companyId || '';
         claim.reviewNotes = reviewNotes || 'Claim rejected';
         claim.updatedAt = this.getTimestamp(ctx);
 

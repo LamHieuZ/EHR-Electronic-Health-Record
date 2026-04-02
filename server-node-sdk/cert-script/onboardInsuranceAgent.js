@@ -51,12 +51,20 @@ async function main() {
             affiliation: 'org2.department1',
             enrollmentID: 'insuranceAgent-Rama',
             role: 'client',
-            attrs: [{ name: 'role', value: 'agent', ecert: true },{ name: 'uuid', value: 'insuranceAgent-Rama', ecert: true }],
+            attrs: [
+                { name: 'role', value: 'agent', ecert: true },
+                { name: 'uuid', value: 'insuranceAgent-Rama', ecert: true },
+                { name: 'companyId', value: 'insuranceCompany01', ecert: true }
+            ],
         }, adminUser);
         const enrollment = await ca.enroll({
             enrollmentID: 'insuranceAgent-Rama',
             enrollmentSecret: secret,
-            attr_reqs: [{ name: "role", optional: false },{ name: "uuid", optional: false }]
+            attr_reqs: [
+                { name: "role", optional: false },
+                { name: "uuid", optional: false },
+                { name: "companyId", optional: false }
+            ]
         });
         const x509Identity = {
             credentials: {
@@ -81,8 +89,7 @@ async function main() {
                 const contract = network.getContract('ehrChainCode');
 
                 const args = {
-                    agentId:"insuranceAgent01",
-                    insuranceCompany:"insuranceCompany01-XYZ",
+                    agentId:"insuranceAgent-Rama",
                     name:"Rama",
                     city:"Amravati"
                 }

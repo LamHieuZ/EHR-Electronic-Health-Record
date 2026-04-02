@@ -5,11 +5,13 @@ const path = require('path');
 const FabricCAServices = require('fabric-ca-client');
 const { Wallets, Gateway } = require('fabric-network');
 
-
-const registerUser = async (adminID, doctorId, userID, userRole, args) => {
-    // const adminID = 'admin';
+// ===========================================================================================
+// REGISTER USER - Dang ky user voi Fabric CA va luu vao wallet
+// Ho tro them attribute: hospitalId, companyId
+// ===========================================================================================
+const registerUser = async (adminID, submitterId, userID, userRole, args, extraAttrs = {}) => {
     const orgID = 'Org1';
-    
+
     const ccpPath = path.resolve(__dirname, '..', 'fabric-samples','test-network', 'organizations', 'peerOrganizations', `${orgID}.example.com`.toLowerCase(), `connection-${orgID}.json`.toLowerCase());
     const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
     const orgMSP = ccp.organizations[orgID].mspid;
@@ -47,28 +49,37 @@ const registerUser = async (adminID, doctorId, userID, userRole, args) => {
         };
     }
 
-    // build a user object for authenticating with the CA //Verify
+    // build a user object for authenticating with the CA
     const provider = wallet.getProviderRegistry().getProvider(adminIdentity.type);
     const adminUser = await provider.getUserContext(adminIdentity, adminID);
 
+    // Build certificate attributes
+    const attrs = [
+        {name: 'role', value: userRole, ecert: true},
+        {name: 'uuid', value: userID, ecert: true},
+    ];
+    // Them hospitalId neu co
+    if (extraAttrs.hospitalId) {
+        attrs.push({name: 'hospitalId', value: extraAttrs.hospitalId, ecert: true});
+    }
+    // Them companyId neu co
+    if (extraAttrs.companyId) {
+        attrs.push({name: 'companyId', value: extraAttrs.companyId, ecert: true});
+    }
+
     // Register the user, enroll the user, and import the new identity into the wallet.
-    // if affiliation is specified by client, the affiliation value must be configured in CA
+    const attrReqs = attrs.map(a => ({name: a.name, optional: false}));
+
     const secret = await ca.register({
-        affiliation: `${orgID}.department1`.toLowerCase(), //TODO: as per affiliation in config .${userRole}
+        affiliation: `${orgID}.department1`.toLowerCase(),
         enrollmentID: userID,
         role: 'client',
-        attrs: [
-            {name: 'role', value: userRole, ecert: true},           
-            {name: 'uuid', value: userID, ecert: true},           
-        ]
+        attrs: attrs
     }, adminUser);
     const enrollment = await ca.enroll({
         enrollmentID: userID,
         enrollmentSecret: secret,
-        attr_reqs: [
-            {name: 'role', optional: false},          
-            {name: 'uuid', optional: false},          
-        ]
+        attr_reqs: attrReqs
     });
     const x509Identity = {
         credentials: {
@@ -80,34 +91,34 @@ const registerUser = async (adminID, doctorId, userID, userRole, args) => {
     };
     await wallet.put(userID, x509Identity);
     console.log(`Successfully registered and enrolled user ${userID} and imported it into the wallet`);
-    
-     // Create a new gateway for connecting to our peer node.
+
+    // Neu co chaincode function can goi (vd: onboardPatient, onboardDoctor...)
+    if (args && args.chaincodeFcn) {
         const gateway = new Gateway();
-        await gateway.connect(ccp, { wallet, identity: doctorId, discovery: { enabled: true, asLocalhost: true } });
-
-        // Get the network (channel) our contract is deployed to.
+        await gateway.connect(ccp, { wallet, identity: submitterId, discovery: { enabled: true, asLocalhost: true } });
         const network = await gateway.getNetwork('mychannel');
-
-        // Get the contract from the network.
         const contract = network.getContract('ehrChainCode');
 
-        const args01 = {
-            patientId:userID,
-            hospitalName: args.hospitalName,
-            name:args.name,
-            city:args.city
-        }
+        const chaincodeArgs = { ...args };
+        delete chaincodeArgs.chaincodeFcn;
 
-        const buffer = await contract.submitTransaction('onboardPatient', JSON.stringify(args01));
-        // Disconnect from the gateway.
+        const buffer = await contract.submitTransaction(args.chaincodeFcn, JSON.stringify(chaincodeArgs));
         gateway.disconnect();
+
+        return {
+            statusCode: 200,
+            userID: userID,
+            role: userRole,
+            message: `${userID} registered and enrolled successfully.`,
+            chaincodeRes: buffer.toString()
+        };
+    }
 
     return {
         statusCode: 200,
         userID: userID,
         role: userRole,
-        message: `${userID} registered and enrolled successfully.`,
-        chaincodeRes: buffer.toString()
+        message: `${userID} registered and enrolled successfully.`
     };
 }
 
@@ -135,7 +146,7 @@ const login = async (userID) => {
     } else {
         return {
             statusCode: 200,
-            userID: userID,           
+            userID: userID,
             message: `User login successful:: ${userID} .`
         };
     }

@@ -21,32 +21,181 @@ app.get('/status', async function (req, res, next) {
 
 app.post('/registerPatient', async function (req, res, next) {
     try {
-        let role; 
-        let {adminId, doctorId, userId, name, dob, city} = req.body;
+        let {adminId, userId, name, dob, city} = req.body;
 
-        // check request body
         console.log("Received request:", req.body);
-        if (req.body.userId && req.body.adminId) {
-            userId = req.body.userId;
-            
-            adminId = req.body.adminId;
-        } else {
-            console.log("Missing input data. Please enter all the user details.");
-            throw new Error("Missing input data. Please enter all the user details.");
+        if (!userId) {
+            throw new Error("Missing input data. Please enter userId.");
         }
-        
-        role='patient';
+        adminId = adminId || 'hospitalAdmin';
+        // submitterId = identity dung de submit chaincode transaction
+        const submitterId = req.body.submitterId || 'Hospital01';
 
-        //call registerEnrollUser function and pass the above as parameters to the function
-        const result = await helper.registerUser(adminId, doctorId, userId, role, { name, dob, city});
+        const result = await helper.registerUser(adminId, submitterId, userId, 'patient', {
+            chaincodeFcn: 'onboardPatient',
+            patientId: userId, name, dob, city
+        });
         console.log("Result from user registration function:", result);
-
-        // check register function response and set API response accordingly 
         res.status(200).send(result);
     } catch (error) {
         console.log("There was an error while registering the user. Error is ", error);
         next(error);
-    }  
+    }
+});
+
+// ===========================================================================================
+// ONBOARD HOSPITAL - Dang ky benh vien moi (chi hospital admin)
+// ===========================================================================================
+app.post('/onboardHospital', async function (req, res, next) {
+    try {
+        const {adminId, hospitalId, name, city} = req.body;
+        if (!hospitalId || !name) {
+            throw new Error("Missing hospitalId or name");
+        }
+        // Dang ky identity voi CA (role=hospital, hospitalId=chinh no)
+        const result = await helper.registerUser(
+            adminId || 'hospitalAdmin',
+            adminId || 'hospitalAdmin',
+            hospitalId,
+            'hospital',
+            { chaincodeFcn: 'onboardHospital', hospitalId, name, city },
+            { hospitalId: hospitalId }
+        );
+        res.status(200).send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// ONBOARD DOCTOR - Dang ky bac si moi (hospital dang ky)
+// ===========================================================================================
+app.post('/onboardDoctor', async function (req, res, next) {
+    try {
+        const {hospitalUserId, doctorId, name, city} = req.body;
+        if (!doctorId || !name) {
+            throw new Error("Missing doctorId or name");
+        }
+        const hospitalUser = hospitalUserId || 'Hospital01';
+        // Dang ky identity voi CA (role=doctor, hospitalId tu hospital)
+        const result = await helper.registerUser(
+            'hospitalAdmin',
+            hospitalUser,
+            doctorId,
+            'doctor',
+            { chaincodeFcn: 'onboardDoctor', doctorId, name, city },
+            { hospitalId: req.body.hospitalId || hospitalUser }
+        );
+        res.status(200).send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// ONBOARD PHARMACY - Dang ky nha thuoc moi (hospital dang ky)
+// ===========================================================================================
+app.post('/onboardPharmacy', async function (req, res, next) {
+    try {
+        const {hospitalUserId, pharmacyId, name, city} = req.body;
+        if (!pharmacyId || !name) {
+            throw new Error("Missing pharmacyId or name");
+        }
+        const hospitalUser = hospitalUserId || 'Hospital01';
+        const result = await helper.registerUser(
+            'hospitalAdmin',
+            hospitalUser,
+            pharmacyId,
+            'pharmacy',
+            { chaincodeFcn: 'onboardPharmacy', pharmacyId, name, city },
+            { hospitalId: req.body.hospitalId || hospitalUser }
+        );
+        res.status(200).send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// ONBOARD INSURANCE COMPANY - Dang ky cong ty bao hiem moi
+// ===========================================================================================
+app.post('/onboardInsuranceCompany', async function (req, res, next) {
+    try {
+        const {companyId, name, city} = req.body;
+        if (!companyId || !name) {
+            throw new Error("Missing companyId or name");
+        }
+        const result = await helper.registerUser(
+            'insuranceAdmin',
+            'insuranceAdmin',
+            companyId,
+            'insuranceAdmin',
+            { chaincodeFcn: 'onboardInsuranceCompany', companyId, name, city },
+            { companyId: companyId }
+        );
+        res.status(200).send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// ONBOARD INSURANCE AGENT - Dang ky dai ly bao hiem
+// ===========================================================================================
+app.post('/onboardInsuranceAgent', async function (req, res, next) {
+    try {
+        const {companyUserId, agentId, name, city} = req.body;
+        if (!agentId || !name) {
+            throw new Error("Missing agentId or name");
+        }
+        const companyUser = companyUserId || 'insuranceCompany01';
+        const result = await helper.registerUser(
+            'insuranceAdmin',
+            companyUser,
+            agentId,
+            'agent',
+            { chaincodeFcn: 'onboardInsurance', agentId, name, city },
+            { companyId: req.body.companyId || companyUser }
+        );
+        res.status(200).send(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// QUERY - Lay danh sach benh vien, bac si, nha thuoc, bao hiem
+// ===========================================================================================
+app.post('/getAllHospitals', async function (req, res, next) {
+    try {
+        const {userId} = req.body;
+        const result = await query.getQuery('getAllHospitals', {}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) { next(error); }
+});
+
+app.post('/getAllDoctors', async function (req, res, next) {
+    try {
+        const {userId, hospitalId} = req.body;
+        const result = await query.getQuery('getAllDoctors', {hospitalId: hospitalId || ''}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) { next(error); }
+});
+
+app.post('/getAllPharmacies', async function (req, res, next) {
+    try {
+        const {userId, hospitalId} = req.body;
+        const result = await query.getQuery('getAllPharmacies', {hospitalId: hospitalId || ''}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) { next(error); }
+});
+
+app.post('/getAllInsuranceCompanies', async function (req, res, next) {
+    try {
+        const {userId} = req.body;
+        const result = await query.getQuery('getAllInsuranceCompanies', {}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) { next(error); }
 });
 
 app.post('/loginPatient', async function (req, res, next){
@@ -384,5 +533,6 @@ app.post('/getRewardsByPatient', async function (req, res, next){
 // ERROR HANDLER
 // ===========================================================================================
 app.use((err, req, res, next) => {
-    res.status(400).send(err.message);
+    console.error("Error:", err.message);
+    res.status(400).json({ success: false, error: err.message });
 })

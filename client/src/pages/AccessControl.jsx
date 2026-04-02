@@ -14,7 +14,7 @@ export default function AccessControl() {
     setLoading(true)
     try {
       const res = await grantAccess({ userId: user.userId, args: [user.userId, doctorId] })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success(`Đã cấp quyền cho bác sĩ ${doctorId}`)
         setDoctorId('')
       } else {
@@ -32,7 +32,7 @@ export default function AccessControl() {
     setLoading(true)
     try {
       const res = await revokeAccess({ userId: user.userId, args: [user.userId, doctorId] })
-      if (res.data.result) {
+      if (res.data.success || res.data.data) {
         toast.success(`Đã thu hồi quyền của bác sĩ ${doctorId}`)
         setDoctorId('')
       } else {

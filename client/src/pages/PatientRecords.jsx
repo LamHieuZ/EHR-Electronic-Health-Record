@@ -22,7 +22,7 @@ export default function PatientRecords() {
     setLoading(true)
     try {
       const res = await getAllRecordsByPatientId({ userId: user.userId, args: [patientId] })
-      const data = JSON.parse(res.data.result || '[]')
+      const data = JSON.parse(res.data.data || '[]')
       setRecords(data)
     } catch {
       toast.error('Không thể tải hồ sơ')
@@ -38,7 +38,7 @@ export default function PatientRecords() {
     }
     try {
       const res = await queryHistoryOfAsset({ userId: user.userId, args: [assetId] })
-      const data = JSON.parse(res.data.result || '[]')
+      const data = JSON.parse(res.data.data || '[]')
       setHistory((prev) => ({ ...prev, [assetId]: data }))
       setExpandedId(assetId)
     } catch {
