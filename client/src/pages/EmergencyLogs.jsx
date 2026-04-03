@@ -17,7 +17,7 @@ export default function EmergencyLogs() {
     }
     setLoading(true)
     try {
-      const res = await emergencyAccess({ userId: user.userId, args: [patientId, reason] })
+      const res = await emergencyAccess({ userId: user.userId, patientId, reason })
       if (res.data.success || res.data.data) {
         toast.success('Truy cập khẩn cấp đã được ghi nhận')
         setReason('')
@@ -35,8 +35,9 @@ export default function EmergencyLogs() {
     if (!patientId.trim()) return
     setLoading(true)
     try {
-      const res = await getEmergencyLogs({ userId: user.userId, args: [patientId] })
-      setLogs(JSON.parse(res.data.data || '[]'))
+      const res = await getEmergencyLogs({ userId: user.userId, patientId })
+      const raw = res.data.data
+      setLogs(typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []))
     } catch {
       toast.error('Lỗi tải nhật ký')
     } finally {

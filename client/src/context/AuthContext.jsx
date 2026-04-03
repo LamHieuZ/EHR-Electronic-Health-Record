@@ -3,10 +3,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('ehr_user')
-    return saved ? JSON.parse(saved) : null
-  })
+  const [user, setUser] = useState(null)
 
   useEffect(() => {
     if (user) {

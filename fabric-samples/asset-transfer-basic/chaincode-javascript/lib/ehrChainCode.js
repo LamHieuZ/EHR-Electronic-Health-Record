@@ -558,9 +558,12 @@ class ehrChainCode extends Contract {
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
         const results = [];
 
-        for await (const res of iterator) {
-            results.push(JSON.parse(res.value.toString('utf8')));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(results);
     }
@@ -593,11 +596,14 @@ class ehrChainCode extends Contract {
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
 
-        for await (const res of iterator) {
-            if (res.key.startsWith('patient-')) {
-                results.push(JSON.parse(res.value.toString()));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('patient-')) {
+                results.push(JSON.parse(_res.value.value.toString()));
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(results);
     }
@@ -606,11 +612,14 @@ class ehrChainCode extends Contract {
     async getAllHospitals(ctx) {
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
-        for await (const res of iterator) {
-            if (res.key.startsWith('hospital-')) {
-                results.push(JSON.parse(res.value.toString()));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('hospital-')) {
+                results.push(JSON.parse(_res.value.value.toString()));
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
         return JSON.stringify(results);
     }
 
@@ -619,14 +628,17 @@ class ehrChainCode extends Contract {
         const { hospitalId } = args ? JSON.parse(args) : {};
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
-        for await (const res of iterator) {
-            if (res.key.startsWith('doctor-')) {
-                const doctor = JSON.parse(res.value.toString());
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('doctor-')) {
+                const doctor = JSON.parse(_res.value.value.toString());
                 if (!hospitalId || doctor.hospitalId === hospitalId) {
                     results.push(doctor);
                 }
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
         return JSON.stringify(results);
     }
 
@@ -635,14 +647,17 @@ class ehrChainCode extends Contract {
         const { hospitalId } = args ? JSON.parse(args) : {};
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
-        for await (const res of iterator) {
-            if (res.key.startsWith('pharmacy-')) {
-                const pharmacy = JSON.parse(res.value.toString());
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('pharmacy-')) {
+                const pharmacy = JSON.parse(_res.value.value.toString());
                 if (!hospitalId || pharmacy.hospitalId === hospitalId) {
                     results.push(pharmacy);
                 }
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
         return JSON.stringify(results);
     }
 
@@ -650,11 +665,14 @@ class ehrChainCode extends Contract {
     async getAllInsuranceCompanies(ctx) {
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
-        for await (const res of iterator) {
-            if (res.key.startsWith('insurance-')) {
-                results.push(JSON.parse(res.value.toString()));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('insurance-')) {
+                results.push(JSON.parse(_res.value.value.toString()));
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
         return JSON.stringify(results);
     }
 
@@ -664,24 +682,26 @@ class ehrChainCode extends Contract {
         const results = [];
         const iterator = await ctx.stub.getStateByRange('', '');
 
-        for await (const res of iterator) {
-            if (res.key.startsWith('\x00record')) {
-                const record = JSON.parse(res.value.toString());
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('\x00record')) {
+                const record = JSON.parse(_res.value.value.toString());
                 if (record.doctorId === doctorId) {
                     results.push(record);
                 }
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(results);
     }
 
     // Admin (hospital) xem toan bo ledger
     async fetchLedger(ctx) {
-        const { role } = this.getCallerAttributes(ctx);
-
-        if (role !== 'hospital') {
-            throw new Error('Only hospital can fetch blockchain ledger');
+        const mspId = ctx.clientIdentity.getMSPID();
+        if (mspId !== 'Org1MSP') {
+            throw new Error('Only Org1 (hospital) members can fetch blockchain ledger');
         }
 
         const allResults = [];
@@ -746,8 +766,9 @@ class ehrChainCode extends Contract {
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
         const prescriptions = [];
 
-        for await (const res of iterator) {
-            const record = JSON.parse(res.value.toString('utf8'));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            const record = JSON.parse(_res.value.value.toString('utf8'));
             if (record.prescription && record.prescription.medications) {
                 prescriptions.push({
                     recordId: record.recordId,
@@ -758,7 +779,9 @@ class ehrChainCode extends Contract {
                     timestamp: record.timestamp
                 });
             }
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(prescriptions);
     }
@@ -886,9 +909,12 @@ class ehrChainCode extends Contract {
         const iterator = await ctx.stub.getStateByPartialCompositeKey('claim', [patientId]);
         const results = [];
 
-        for await (const res of iterator) {
-            results.push(JSON.parse(res.value.toString('utf8')));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(results);
     }
@@ -1084,8 +1110,9 @@ class ehrChainCode extends Contract {
         // Lay tat ca record
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
         const records = [];
-        for await (const res of iterator) {
-            const record = JSON.parse(res.value.toString('utf8'));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            const record = JSON.parse(_res.value.value.toString('utf8'));
             // An danh hoa: chi giu lai du lieu y te, bo thong tin dinh danh
             records.push({
                 recordId: record.recordId,
@@ -1093,7 +1120,9 @@ class ehrChainCode extends Contract {
                 prescription: record.prescription,
                 timestamp: record.timestamp
             });
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         // Tra ve du lieu an danh
         const anonymized = {
@@ -1163,9 +1192,12 @@ class ehrChainCode extends Contract {
         // Lay tat ca record cua benh nhan
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
         const records = [];
-        for await (const res of iterator) {
-            records.push(JSON.parse(res.value.toString('utf8')));
+        let _res2 = await iterator.next();
+        while (!_res2.done) {
+            records.push(JSON.parse(_res2.value.value.toString('utf8')));
+            _res2 = await iterator.next();
         }
+        await iterator.close();
 
         const patient = JSON.parse(patientJSON.toString());
 
@@ -1193,9 +1225,12 @@ class ehrChainCode extends Contract {
         const iterator = await ctx.stub.getStateByPartialCompositeKey('emergency', [patientId]);
         const results = [];
 
-        for await (const res of iterator) {
-            results.push(JSON.parse(res.value.toString('utf8')));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(results);
     }
@@ -1273,9 +1308,12 @@ class ehrChainCode extends Contract {
         const iterator = await ctx.stub.getStateByPartialCompositeKey('reward', [patientId]);
         const results = [];
 
-        for await (const res of iterator) {
-            results.push(JSON.parse(res.value.toString('utf8')));
+        let _res = await iterator.next();
+        while (!_res.done) {
+            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            _res = await iterator.next();
         }
+        await iterator.close();
 
         return JSON.stringify(results);
     }

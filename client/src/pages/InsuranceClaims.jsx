@@ -28,8 +28,9 @@ export default function InsuranceClaims() {
     if (!searchId.trim()) return
     setLoading(true)
     try {
-      const res = await getClaimsByPatient({ userId: user.userId, args: [searchId] })
-      setClaims(JSON.parse(res.data.data || '[]'))
+      const res = await getClaimsByPatient({ userId: user.userId, patientId: searchId })
+      const raw = res.data.data
+      setClaims(typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []))
     } catch {
       toast.error('Lỗi tải yêu cầu bảo hiểm')
     } finally {
@@ -43,7 +44,11 @@ export default function InsuranceClaims() {
     try {
       const res = await createClaim({
         userId: user.userId,
-        args: [form.patientId, form.recordId, form.claimType, form.amount, form.description],
+        patientId: form.patientId,
+        recordId: form.recordId,
+        claimType: form.claimType,
+        amount: form.amount,
+        description: form.description,
       })
       if (res.data.success || res.data.data) {
         toast.success('Tạo yêu cầu bảo hiểm thành công!')
@@ -67,7 +72,9 @@ export default function InsuranceClaims() {
       const fn = action === 'approve' ? approveClaim : rejectClaim
       const res = await fn({
         userId: user.userId,
-        args: [reviewForm.patientId, reviewForm.claimId, reviewForm.notes],
+        patientId: reviewForm.patientId,
+        claimId: reviewForm.claimId,
+        reviewNotes: reviewForm.notes,
       })
       if (res.data.success || res.data.data) {
         toast.success(action === 'approve' ? 'Đã duyệt!' : 'Đã từ chối!')

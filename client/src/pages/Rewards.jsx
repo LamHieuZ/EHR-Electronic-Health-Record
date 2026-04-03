@@ -15,8 +15,9 @@ export default function Rewards() {
 
   const loadRewards = async () => {
     try {
-      const res = await getRewardsByPatient({ userId: user.userId, args: [user.userId] })
-      setRewards(JSON.parse(res.data.data || '[]'))
+      const res = await getRewardsByPatient({ userId: user.userId, patientId: user.userId })
+      const raw = res.data.data
+      setRewards(typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []))
     } catch {
       // best effort
     } finally {
@@ -26,7 +27,7 @@ export default function Rewards() {
 
   const handleClaim = async (rewardId) => {
     try {
-      const res = await claimReward({ userId: user.userId, args: [user.userId, rewardId] })
+      const res = await claimReward({ userId: user.userId, patientId: user.userId, rewardId })
       if (res.data.success || res.data.data) {
         toast.success('Đã nhận phần thưởng!')
         loadRewards()

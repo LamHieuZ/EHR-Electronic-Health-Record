@@ -3,23 +3,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { loginPatient } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiActivity, FiUser, FiLock, FiArrowRight } from 'react-icons/fi'
+import { FiActivity, FiUser, FiArrowRight } from 'react-icons/fi'
 
 export default function Login() {
-  const [form, setForm] = useState({ userId: '', role: 'patient' })
+  const [form, setForm] = useState({ userId: '' })
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
-
-  const roles = [
-    { value: 'patient', label: 'Bệnh nhân' },
-    { value: 'doctor', label: 'Bác sĩ' },
-    { value: 'admin', label: 'Quản trị viên' },
-    { value: 'hospital', label: 'Bệnh viện' },
-    { value: 'pharmacy', label: 'Nhà thuốc' },
-    { value: 'insurance', label: 'Bảo hiểm' },
-    { value: 'researcher', label: 'Nghiên cứu' },
-  ]
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -30,12 +20,12 @@ export default function Login() {
     setLoading(true)
     try {
       const res = await loginPatient({ userId: form.userId })
-      if (res.data.statusCode === 200 || res.data.userID) {
-        login({ userId: form.userId, role: form.role })
+      if (res.data.userID) {
+        login({ userId: res.data.userID, role: res.data.role })
         toast.success('Đăng nhập thành công!')
         navigate('/')
       } else {
-        toast.error(res.data.error || 'Đăng nhập thất bại')
+        toast.error(res.data.message || 'Đăng nhập thất bại')
       }
     } catch (err) {
       toast.error(err.response?.data?.error || 'Lỗi kết nối server')
@@ -72,19 +62,6 @@ export default function Login() {
                   placeholder="Nhập User ID"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Vai trò</label>
-              <select
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-                className="input-field"
-              >
-                {roles.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
             </div>
 
             <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">

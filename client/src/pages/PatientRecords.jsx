@@ -21,8 +21,9 @@ export default function PatientRecords() {
   const loadRecords = async (patientId) => {
     setLoading(true)
     try {
-      const res = await getAllRecordsByPatientId({ userId: user.userId, args: [patientId] })
-      const data = JSON.parse(res.data.data || '[]')
+      const res = await getAllRecordsByPatientId({ userId: user.userId, patientId })
+      const raw = res.data.data
+      const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || [])
       setRecords(data)
     } catch {
       toast.error('Không thể tải hồ sơ')
@@ -37,8 +38,9 @@ export default function PatientRecords() {
       return
     }
     try {
-      const res = await queryHistoryOfAsset({ userId: user.userId, args: [assetId] })
-      const data = JSON.parse(res.data.data || '[]')
+      const res = await queryHistoryOfAsset({ userId: user.userId, recordId: assetId })
+      const raw = res.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw?.data || []))
       setHistory((prev) => ({ ...prev, [assetId]: data }))
       setExpandedId(assetId)
     } catch {

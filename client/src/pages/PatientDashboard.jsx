@@ -17,10 +17,10 @@ export default function PatientDashboard() {
   const loadDashboard = async () => {
     try {
       const [recordsRes, prescRes, claimsRes, rewardsRes] = await Promise.allSettled([
-        getAllRecordsByPatientId({ userId: user.userId, args: [user.userId] }),
-        getPrescriptionsByPatient({ userId: user.userId, args: [user.userId] }),
-        getClaimsByPatient({ userId: user.userId, args: [user.userId] }),
-        getRewardsByPatient({ userId: user.userId, args: [user.userId] }),
+        getAllRecordsByPatientId({ userId: user.userId, patientId: user.userId }),
+        getPrescriptionsByPatient({ userId: user.userId, patientId: user.userId }),
+        getClaimsByPatient({ userId: user.userId, patientId: user.userId }),
+        getRewardsByPatient({ userId: user.userId, patientId: user.userId }),
       ])
 
       const records = recordsRes.status === 'fulfilled' ? JSON.parse(recordsRes.value.data.data || '[]') : []

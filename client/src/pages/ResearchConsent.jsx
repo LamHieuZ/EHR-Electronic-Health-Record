@@ -20,7 +20,7 @@ export default function ResearchConsent() {
     e.preventDefault()
     setLoading(true)
     try {
-      const res = await requestConsent({ userId: user.userId, args: [user.userId, reqForm.patientId, reqForm.purpose] })
+      const res = await requestConsent({ userId: user.userId, researcherId: user.userId, patientId: reqForm.patientId, purpose: reqForm.purpose })
       if (res.data.success || res.data.data) {
         toast.success('Đã gửi yêu cầu đồng ý nghiên cứu!')
         setReqForm({ patientId: '', purpose: '' })
@@ -38,7 +38,7 @@ export default function ResearchConsent() {
     if (!approveForm.requestId.trim()) return toast.error('Nhập Request ID')
     setLoading(true)
     try {
-      const res = await approveConsent({ userId: user.userId, args: [user.userId, approveForm.requestId, approved.toString()] })
+      const res = await approveConsent({ userId: user.userId, patientId: user.userId, requestId: approveForm.requestId, approved })
       if (res.data.success || res.data.data) {
         toast.success(approved ? 'Đã đồng ý!' : 'Đã từ chối!')
         setApproveForm({ requestId: '', approved: true })
@@ -56,8 +56,9 @@ export default function ResearchConsent() {
     if (!anonForm.patientId.trim()) return
     setLoading(true)
     try {
-      const res = await getAnonymizedData({ userId: user.userId, args: [user.userId, anonForm.patientId] })
-      setAnonData(JSON.parse(res.data.data || 'null'))
+      const res = await getAnonymizedData({ userId: user.userId, researcherId: user.userId, patientId: anonForm.patientId })
+      const raw = res.data.data
+      setAnonData(typeof raw === 'string' ? JSON.parse(raw || 'null') : (raw || null))
     } catch (err) {
       toast.error(err.response?.data?.error || 'Không có quyền hoặc chưa được đồng ý')
     } finally {

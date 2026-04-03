@@ -11,21 +11,22 @@ const path = require('path');
 const fs = require('fs');
 
 
+// Xac dinh Org tu identity trong wallet (dua vao mspId)
+const getOrgFromIdentity = (identity) => {
+    if (identity.mspId === 'Org2MSP') return 'Org2';
+    return 'Org1';
+};
+
 const getQuery = async (fcn, args, userId) => {
 
-    const orgID = 'Org1';
     const channelName = 'mychannel';
     const chaincodeName = 'ehrChainCode';
 
-    const ccpPath = path.resolve(__dirname, '..', 'fabric-samples', 'test-network', 'organizations', 'peerOrganizations', `${orgID}.example.com`.toLowerCase(), `connection-${orgID}.json`.toLowerCase());
-    const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
-
-    // Create a new file system based wallet for managing identities.
+    // Lay identity tu wallet truoc de xac dinh Org
     const walletPath = path.join(process.cwd(), 'wallet');
     const wallet = await Wallets.newFileSystemWallet(walletPath);
     console.log(`Wallet path: ${walletPath}`);
 
-    // Check to see if we've already enrolled the user.
     const identity = await wallet.get(userId);
     if (!identity) {
         console.log(`An identity for the user ${userId} does not exist in the wallet`);
@@ -36,11 +37,18 @@ const getQuery = async (fcn, args, userId) => {
             message: `An identity for the user ${userId} does not exist.`
         };
     }
+
+    // Tu dong chon Org dua vao mspId cua user
+    const orgID = getOrgFromIdentity(identity);
+    console.log(`User ${userId} belongs to ${orgID} (${identity.mspId})`);
+
+    const ccpPath = path.resolve(__dirname, '..', 'fabric-samples', 'test-network', 'organizations', 'peerOrganizations', `${orgID}.example.com`.toLowerCase(), `connection-${orgID}.json`.toLowerCase());
+    const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
        
     // Create a new gateway for connecting to our peer node.
     const gateway = new Gateway();
    
-    await gateway.connect(ccp, { wallet, identity: userId, discovery: { enabled: true, asLocalhost: true } });
+    await gateway.connect(ccp, { wallet, identity: userId, discovery: { enabled: false } });
     
     // Get the network (channel) our contract is deployed to.
     const network = await gateway.getNetwork(channelName);

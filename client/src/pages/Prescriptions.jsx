@@ -15,8 +15,9 @@ export default function Prescriptions() {
     if (!patientId.trim()) return
     setLoading(true)
     try {
-      const res = await getPrescriptionsByPatient({ userId: user.userId, args: [patientId] })
-      const data = JSON.parse(res.data.data || '[]')
+      const res = await getPrescriptionsByPatient({ userId: user.userId, patientId })
+      const raw = res.data.data
+      const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || [])
       setPrescriptions(data)
       if (data.length === 0) toast.info('Không có đơn thuốc')
     } catch {
@@ -32,7 +33,10 @@ export default function Prescriptions() {
     try {
       const res = await verifyPrescription({
         userId: user.userId,
-        args: [patientId, recordId, user.userId, verifyForm.notes],
+        patientId,
+        recordId,
+        dispensedBy: user.userId,
+        dispensedNotes: verifyForm.notes,
       })
       if (res.data.success || res.data.data) {
         toast.success('Xác nhận cấp thuốc thành công!')

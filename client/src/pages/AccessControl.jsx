@@ -13,7 +13,7 @@ export default function AccessControl() {
     if (!doctorId.trim()) return toast.error('Vui lòng nhập Doctor ID')
     setLoading(true)
     try {
-      const res = await grantAccess({ userId: user.userId, args: [user.userId, doctorId] })
+      const res = await grantAccess({ userId: user.userId, patientId: user.userId, doctorIdToGrant: doctorId })
       if (res.data.success || res.data.data) {
         toast.success(`Đã cấp quyền cho bác sĩ ${doctorId}`)
         setDoctorId('')
@@ -31,7 +31,7 @@ export default function AccessControl() {
     if (!doctorId.trim()) return toast.error('Vui lòng nhập Doctor ID')
     setLoading(true)
     try {
-      const res = await revokeAccess({ userId: user.userId, args: [user.userId, doctorId] })
+      const res = await revokeAccess({ userId: user.userId, patientId: user.userId, doctorIdToRevoke: doctorId })
       if (res.data.success || res.data.data) {
         toast.success(`Đã thu hồi quyền của bác sĩ ${doctorId}`)
         setDoctorId('')

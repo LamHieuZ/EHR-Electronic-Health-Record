@@ -95,7 +95,6 @@ node cert-script/onboardInsuranceAgent.js
 
 ```bash
 cd server-node-sdk/
-npm install
 npm run dev    # Runs on http://localhost:5000
 ```
 
@@ -104,7 +103,7 @@ npm run dev    # Runs on http://localhost:5000
 ```bash
 cd client/
 npm install
-npm run dev    # Runs on http://localhost:5173
+npm run dev    # Runs on http://localhost:3000
 ```
 
 ### 7. (Optional) Start Blockchain Explorer

@@ -115,7 +115,9 @@ export default function DoctorDashboard() {
       const prescription = buildPrescription(addForm.medications)
       const res = await addRecord({
         userId: user.userId,
-        args: [addForm.patientId, diagnosis, prescription],
+        patientId: addForm.patientId,
+        diagnosis,
+        prescription,
       })
       if (res.data.success || res.data.data) {
         toast.success('Thêm bệnh án thành công!')
@@ -145,7 +147,10 @@ export default function DoctorDashboard() {
       const prescription = buildPrescription(updateForm.medications)
       const res = await updateRecord({
         userId: user.userId,
-        args: [updateForm.patientId, updateForm.recordId, diagnosis, prescription],
+        patientId: updateForm.patientId,
+        recordId: updateForm.recordId,
+        diagnosis,
+        prescription,
       })
       if (res.data.success || res.data.data) {
         toast.success('Cập nhật bệnh án thành công!')
@@ -174,9 +179,10 @@ export default function DoctorDashboard() {
     try {
       const res = await getAllRecordsByPatientId({
         userId: user.userId,
-        args: [searchId],
+        patientId: searchId,
       })
-      const data = JSON.parse(res.data.data || '[]')
+      const raw = res.data.data
+      const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || [])
       setRecords(data)
       if (data.length === 0) toast.info('Không tìm thấy hồ sơ')
     } catch (err) {

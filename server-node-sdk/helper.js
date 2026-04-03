@@ -9,8 +9,15 @@ const { Wallets, Gateway } = require('fabric-network');
 // REGISTER USER - Dang ky user voi Fabric CA va luu vao wallet
 // Ho tro them attribute: hospitalId, companyId
 // ===========================================================================================
+// Xac dinh Org tu role: insurance-related → Org2, con lai → Org1
+const getOrgFromRole = (userRole) => {
+    const org2Roles = ['insuranceAdmin', 'agent'];
+    if (org2Roles.includes(userRole)) return 'Org2';
+    return 'Org1';
+};
+
 const registerUser = async (adminID, submitterId, userID, userRole, args, extraAttrs = {}) => {
-    const orgID = 'Org1';
+    const orgID = getOrgFromRole(userRole);
 
     const ccpPath = path.resolve(__dirname, '..', 'fabric-samples','test-network', 'organizations', 'peerOrganizations', `${orgID}.example.com`.toLowerCase(), `connection-${orgID}.json`.toLowerCase());
     const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
@@ -95,7 +102,7 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
     // Neu co chaincode function can goi (vd: onboardPatient, onboardDoctor...)
     if (args && args.chaincodeFcn) {
         const gateway = new Gateway();
-        await gateway.connect(ccp, { wallet, identity: submitterId, discovery: { enabled: true, asLocalhost: true } });
+        await gateway.connect(ccp, { wallet, identity: submitterId, discovery: { enabled: false } });
         const network = await gateway.getNetwork('mychannel');
         const contract = network.getContract('ehrChainCode');
 
@@ -123,11 +130,6 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
 }
 
 const login = async (userID) => {
-
-    const orgID = 'Org1';
-
-    const ccpPath = path.resolve(__dirname, '..', 'fabric-samples', 'test-network', 'organizations', 'peerOrganizations', `${orgID}.example.com`.toLowerCase(), `connection-${orgID}.json`.toLowerCase());
-    const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
     // Create a new file system based wallet for managing identities.
     const walletPath = path.join(process.cwd(), 'wallet');
