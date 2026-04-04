@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { FiHome, FiFileText, FiShield, FiActivity, FiDollarSign, FiDatabase, FiGift, FiAlertTriangle, FiLogOut, FiMenu, FiX, FiUsers } from 'react-icons/fi'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const roleLabels = {
   patient: 'Bệnh nhân',
@@ -17,6 +17,18 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [blockchainStatus, setBlockchainStatus] = useState('checking')
+
+  useEffect(() => {
+    const check = () => {
+      fetch('/api/status')
+        .then(r => r.ok ? setBlockchainStatus('connected') : setBlockchainStatus('disconnected'))
+        .catch(() => setBlockchainStatus('disconnected'))
+    }
+    check()
+    const interval = setInterval(check, 15000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -98,7 +110,15 @@ export default function Layout() {
             <FiMenu className="text-xl" />
           </button>
           <div className="flex-1" />
-          <span className="badge bg-green-100 text-green-700">Blockchain Connected</span>
+          {blockchainStatus === 'connected' && (
+            <span className="badge bg-green-100 text-green-700">Blockchain Connected</span>
+          )}
+          {blockchainStatus === 'disconnected' && (
+            <span className="badge bg-red-100 text-red-700">Blockchain Disconnected</span>
+          )}
+          {blockchainStatus === 'checking' && (
+            <span className="badge bg-gray-100 text-gray-500">Đang kiểm tra...</span>
+          )}
         </header>
 
         {/* Content */}

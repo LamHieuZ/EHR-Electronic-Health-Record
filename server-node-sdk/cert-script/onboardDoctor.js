@@ -28,9 +28,9 @@ async function main() {
         console.log(`Wallet path: ${walletPath}`);
 
         // Check to see if we've already enrolled the user.
-        const userIdentity = await wallet.get('Doctor-Rama04');
+        const userIdentity = await wallet.get('Doctor-01');
         if (userIdentity) {
-            console.log('An identity for the user "Doctor-Rama04" already exists in the wallet');
+            console.log('An identity for the user "Doctor-01" already exists in the wallet');
             return;
         }
 
@@ -49,16 +49,16 @@ async function main() {
         // Register the user, enroll the user, and import the new identity into the wallet.
         const secret = await ca.register({
             affiliation: 'org1.department1',
-            enrollmentID: 'Doctor-Rama04',
+            enrollmentID: 'Doctor-01',
             role: 'client',
             attrs: [
                 { name: 'role', value: 'doctor', ecert: true },
-                { name: 'uuid', value: 'Doctor-Rama04', ecert: true },
+                { name: 'uuid', value: 'Doctor-01', ecert: true },
                 { name: 'hospitalId', value: 'Hospital01', ecert: true }
             ],
         }, adminUser);
         const enrollment = await ca.enroll({
-            enrollmentID: 'Doctor-Rama04',
+            enrollmentID: 'Doctor-01',
             enrollmentSecret: secret,
             attr_reqs: [
                 { name: "role", optional: false },
@@ -74,8 +74,8 @@ async function main() {
             mspId: 'Org1MSP',
             type: 'X.509',
         };
-        await wallet.put('Doctor-Rama04', x509Identity);
-        console.log('Successfully registered and enrolled hospitalAdmin user "Doctor-Rama04" and imported it into the wallet');
+        await wallet.put('Doctor-01', x509Identity);
+        console.log('Successfully registered and enrolled hospitalAdmin user "Doctor-01" and imported it into the wallet');
 
         // -----------------------Create Wallet with default balance on ledger------------------ 
                 // Create a new gateway for connecting to our peer node.
@@ -88,15 +88,12 @@ async function main() {
                 // Get the contract from the network.
                 const contract = network.getContract('ehrChainCode');
 
-                // let doctorId="Doctor-Rama04";
-                // let hospitalName="Hospital01-ABC";
-                // let name="Rama";
-                // let city="Pune";
+
 
                 const args = {
-                    doctorId: "Doctor-Rama04",
-                    name: "Dr. Raj",
-                    city: "Pune"
+                    doctorId: "Doctor-01",
+                    name: "Hieu",
+                    city: "QN"
                 };  
 
                 const res = await contract.submitTransaction('onboardDoctor', JSON.stringify(args));
@@ -109,7 +106,7 @@ async function main() {
                 gateway.disconnect();
 
     } catch (error) {
-        console.error(`Failed to register user "Doctor-Rama04": ${error}`);
+        console.error(`Failed to register user "Doctor-01": ${error}`);
         process.exit(1);
       }
 }

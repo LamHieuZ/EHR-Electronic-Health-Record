@@ -129,6 +129,20 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
     };
 }
 
+const getRoleFromCert = (certPem) => {
+    try {
+        const der = Buffer.from(
+            certPem.replace(/-----[^-]+-----/g, '').replace(/\s/g, ''),
+            'base64'
+        );
+        const str = der.toString('binary');
+        // Search directly for "role":"value" pattern in the cert binary
+        const match = str.match(/"role":"([^"]+)"/);
+        if (match) return match[1];
+    } catch (e) { /* ignore */ }
+    return null;
+};
+
 const login = async (userID) => {
 
     // Create a new file system based wallet for managing identities.
@@ -140,18 +154,18 @@ const login = async (userID) => {
     const identity = await wallet.get(userID);
     if (!identity) {
         console.log(`An identity for the user ${userID} does not exist in the wallet`);
-        console.log('Run the registerUser.js application before retrying');
-        return {
-            statusCode: 200,
-            message: `An identity for the user ${userID} does not exist.`
-        };
-    } else {
-        return {
-            statusCode: 200,
-            userID: userID,
-            message: `User login successful:: ${userID} .`
-        };
+        throw new Error(`User ${userID} not found. Please register first.`);
     }
+
+    const role = getRoleFromCert(identity.credentials.certificate);
+    if (!role) throw new Error(`Cannot determine role for user ${userID}. Please re-register.`);
+
+    return {
+        statusCode: 200,
+        userID: userID,
+        role: role,
+        message: `User login successful:: ${userID} .`
+    };
 }
 
 module.exports = {registerUser, login};

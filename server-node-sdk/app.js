@@ -5,17 +5,25 @@ const helper = require('./helper');
 const invoke = require('./invoke');
 const query = require('./query');
 const cors = require('cors');
+const fhirRouter = require('./fhir');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(fhirRouter);
 
 app.listen(5000, function () {
     console.log('Node SDK server is running on 5000 port :) ');
 });
 
 app.get('/status', async function (req, res, next) {
-    res.send("Server is up.");
+    try {
+        // Ping Fabric bằng cách query getAllHospitals với hospitalAdmin
+        await query.getQuery('getAllHospitals', {}, 'hospitalAdmin');
+        res.json({ status: 'ok', fabric: true });
+    } catch (err) {
+        res.status(503).json({ status: 'degraded', fabric: false, error: err.message });
+    }
 })
 
 
