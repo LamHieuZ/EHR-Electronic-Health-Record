@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getAllRecordsByPatientId, getPrescriptionsByPatient, getClaimsByPatient, getRewardsByPatient } from '../services/api'
-import { FiFileText, FiActivity, FiDollarSign, FiGift, FiTrendingUp, FiClock } from 'react-icons/fi'
+import { getAllRecordsByPatientId, getPrescriptionsByPatient, getClaimsByPatient, getRewardsByPatient, getPatientById } from '../services/api'
+import { FiFileText, FiActivity, FiDollarSign, FiGift, FiClock, FiUser, FiShield } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 
 export default function PatientDashboard() {
   const { user } = useAuth()
   const [stats, setStats] = useState({ records: 0, prescriptions: 0, claims: 0, rewards: 0 })
   const [recentRecords, setRecentRecords] = useState([])
+  const [authorizedDoctors, setAuthorizedDoctors] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -16,17 +17,29 @@ export default function PatientDashboard() {
 
   const loadDashboard = async () => {
     try {
-      const [recordsRes, prescRes, claimsRes, rewardsRes] = await Promise.allSettled([
+      const [recordsRes, prescRes, claimsRes, rewardsRes, patientRes] = await Promise.allSettled([
         getAllRecordsByPatientId({ userId: user.userId, patientId: user.userId }),
         getPrescriptionsByPatient({ userId: user.userId, patientId: user.userId }),
         getClaimsByPatient({ userId: user.userId, patientId: user.userId }),
         getRewardsByPatient({ userId: user.userId, patientId: user.userId }),
+        getPatientById({ userId: user.userId, patientId: user.userId }),
       ])
 
-      const records = recordsRes.status === 'fulfilled' ? JSON.parse(recordsRes.value.data.data || '[]') : []
-      const prescriptions = prescRes.status === 'fulfilled' ? JSON.parse(prescRes.value.data.data || '[]') : []
-      const claims = claimsRes.status === 'fulfilled' ? JSON.parse(claimsRes.value.data.data || '[]') : []
-      const rewards = rewardsRes.status === 'fulfilled' ? JSON.parse(rewardsRes.value.data.data || '[]') : []
+      const parseData = (raw, fallback = []) => {
+        if (!raw) return fallback
+        if (typeof raw === 'string') { try { return JSON.parse(raw) } catch { return fallback } }
+        return raw
+      }
+
+      const records = recordsRes.status === 'fulfilled' ? parseData(recordsRes.value.data.data, []) : []
+      const prescriptions = prescRes.status === 'fulfilled' ? parseData(prescRes.value.data.data, []) : []
+      const claims = claimsRes.status === 'fulfilled' ? parseData(claimsRes.value.data.data, []) : []
+      const rewards = rewardsRes.status === 'fulfilled' ? parseData(rewardsRes.value.data.data, []) : []
+
+      if (patientRes.status === 'fulfilled') {
+        const patientData = parseData(patientRes.value.data.data, {})
+        setAuthorizedDoctors(patientData.authorizedDoctors || [])
+      }
 
       setStats({
         records: records.length,
@@ -86,6 +99,29 @@ export default function PatientDashboard() {
             </div>
           </Link>
         ))}
+      </div>
+
+      {/* Authorized Doctors */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Bác sĩ được cấp quyền</h2>
+          <Link to="/access" className="text-sm text-primary-600 hover:text-primary-700 font-medium">
+            Quản lý quyền
+          </Link>
+        </div>
+        {authorizedDoctors.length === 0 ? (
+          <p className="text-gray-400 text-center py-6">Chưa cấp quyền cho bác sĩ nào</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {authorizedDoctors.map((doctorId) => (
+              <div key={doctorId} className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                <FiUser className="text-blue-500 text-sm" />
+                <span className="text-sm font-medium text-blue-700">{doctorId}</span>
+                <FiShield className="text-blue-400 text-xs" />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Records */}

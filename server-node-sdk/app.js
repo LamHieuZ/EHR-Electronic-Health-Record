@@ -1,5 +1,6 @@
 'use strict';
 
+const http = require('http');
 const express = require('express');
 const helper = require('./helper');
 const invoke = require('./invoke');
@@ -12,14 +13,33 @@ app.use(express.json());
 app.use(cors());
 app.use(fhirRouter);
 
-app.listen(5000, function () {
+const server = http.createServer(app);
+server.listen(5000, function () {
     console.log('Node SDK server is running on 5000 port :) ');
+});
+
+server.on('error', (err) => {
+    console.error('Server error:', err.message);
+    process.exit(1);
 });
 
 app.get('/status', async function (req, res, next) {
     try {
-        // Ping Fabric bằng cách query getAllHospitals với hospitalAdmin
-        await query.getQuery('getAllHospitals', {}, 'hospitalAdmin');
+        const { Gateway, Wallets } = require('fabric-network');
+        const fs = require('fs');
+        const path = require('path');
+        const walletPath = path.join(process.cwd(), 'wallet');
+        const wallet = await Wallets.newFileSystemWallet(walletPath);
+        const identity = await wallet.get('hospitalAdmin');
+        if (!identity) throw new Error('hospitalAdmin not found in wallet');
+        const ccpPath = path.resolve(__dirname, '..', 'fabric-samples', 'test-network', 'organizations',
+            'peerOrganizations', 'org1.example.com', 'connection-org1.json');
+        const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
+        const gateway = new Gateway();
+        await gateway.connect(ccp, { wallet, identity: 'hospitalAdmin', discovery: { enabled: false } });
+        const network = await gateway.getNetwork('mychannel');
+        network.getChannel();
+        gateway.disconnect();
         res.json({ status: 'ok', fabric: true });
     } catch (err) {
         res.status(503).json({ status: 'degraded', fabric: false, error: err.message });
@@ -212,8 +232,8 @@ app.post('/loginPatient', async function (req, res, next){
 
         // check request body        
         if (req.body.userId) {
-            userId = req.body.userId;
-            
+            userId = req.body.userId.trim();
+
         } else {
             console.log("Missing input data. Please enter all the user details.");
             throw new Error("Missing input data. Please enter all the user details.");
@@ -251,7 +271,9 @@ app.post('/addRecord', async function (req, res, next){
     try {
         //  Only doctors can add records
         const {userId, patientId, diagnosis, prescription} = req.body;
-        const result = await invoke.invokeTransaction('addRecord', {patientId, diagnosis, prescription}, userId);
+        const diagObj = typeof diagnosis === 'string' ? JSON.parse(diagnosis) : diagnosis;
+        const presObj = typeof prescription === 'string' ? JSON.parse(prescription) : prescription;
+        const result = await invoke.invokeTransaction('addRecord', {patientId, diagnosis: diagObj, prescription: presObj}, userId);
               
         res.send({sucess:true, data: result})
                 
@@ -285,6 +307,54 @@ app.post('/getRecordById', async function (req, res, next){
         res.status(200).send({ success: true, data:result});
 
     } catch (error) {       
+        next(error);
+    }
+});
+
+app.post('/getAllPrescriptions', async function (req, res, next){
+    try {
+        const { userId } = req.body;
+        // Get all patients first
+        const patients = await query.getQuery('getAllPatients', {}, userId);
+        const patientList = Array.isArray(patients) ? patients : [];
+
+        // Fetch prescriptions for each patient in parallel
+        const results = await Promise.allSettled(
+            patientList.map(p =>
+                query.getQuery('getPrescriptionsByPatient', { patientId: p.patientId }, userId)
+                    .then(rxs => (Array.isArray(rxs) ? rxs : []).map(rx => ({ ...rx, patientId: p.patientId, patientName: p.name || '' })))
+                    .catch(() => [])
+            )
+        );
+
+        const allRx = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+        res.status(200).send({ success: true, data: allRx });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/getMyPatients', async function (req, res, next){
+    try {
+        const { userId } = req.body;
+        const all = await query.getQuery('getAllPatients', {}, userId);
+        const patients = Array.isArray(all) ? all : [];
+        const mine = patients
+            .filter(p => Array.isArray(p.authorizedDoctors) && p.authorizedDoctors.includes(userId))
+            .map(p => ({ patientId: p.patientId, name: p.name || '' }));
+        res.status(200).send({ success: true, data: mine });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/getPatientById', async function (req, res, next){
+    try {
+        const {userId, patientId} = req.body;
+        const result = await query.getQuery('getPatientById',{patientId}, userId);
+        console.log("Response from chaincode", result);
+        res.status(200).send({ success: true, data: result});
+    } catch (error) {
         next(error);
     }
 });
@@ -334,7 +404,9 @@ app.post('/revokeAccess', async function (req, res, next){
 app.post('/updateRecord', async function (req, res, next){
     try {
         const {userId, patientId, recordId, diagnosis, prescription} = req.body;
-        const result = await invoke.invokeTransaction('updateRecord', {patientId, recordId, diagnosis, prescription}, userId);
+        const diagObj = typeof diagnosis === 'string' ? JSON.parse(diagnosis) : diagnosis;
+        const presObj = typeof prescription === 'string' ? JSON.parse(prescription) : prescription;
+        const result = await invoke.invokeTransaction('updateRecord', {patientId, recordId, diagnosis: diagObj, prescription: presObj}, userId);
         res.status(200).send({ success: true, data: result});
     } catch (error) {
         next(error);

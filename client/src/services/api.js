@@ -17,6 +17,9 @@ export const getRecordById = (data) => api.post('/getRecordById', data)
 export const queryHistoryOfAsset = (data) => api.post('/queryHistoryOfAsset', data)
 
 // Access Control
+export const getAllPrescriptions = (data) => api.post('/getAllPrescriptions', data)
+export const getMyPatients = (data) => api.post('/getMyPatients', data)
+export const getPatientById = (data) => api.post('/getPatientById', data)
 export const grantAccess = (data) => api.post('/grantAccess', data)
 export const revokeAccess = (data) => api.post('/revokeAccess', data)
 

@@ -819,6 +819,15 @@ class ehrChainCode extends Contract {
         };
 
         await ctx.stub.putState(dispenseKey, Buffer.from(JSON.stringify(dispenseRecord)));
+
+        // Update original record with dispensed status so patients can see it
+        const record = JSON.parse(recordJSON.toString());
+        record.dispensed = true;
+        record.dispensedBy = dispensedBy || callerId;
+        record.dispensedAt = this.getTimestamp(ctx);
+        record.dispensedNotes = dispensedNotes || '';
+        await ctx.stub.putState(recordKey, Buffer.from(JSON.stringify(record)));
+
         return JSON.stringify({ message: `Prescription ${recordId} dispensed`, dispenseId });
     }
 

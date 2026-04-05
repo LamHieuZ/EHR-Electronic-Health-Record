@@ -37,6 +37,24 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
     const userIdentity = await wallet.get(userID);
     if (userIdentity) {
         console.log(`An identity for the user ${userID} already exists in the wallet.`);
+        // Neu da co identity nhung van can goi chaincode (vd: onboardPatient da dang ky CA nhung chua co tren chain)
+        if (args && args.chaincodeFcn) {
+            const gateway = new Gateway();
+            await gateway.connect(ccp, { wallet, identity: submitterId, discovery: { enabled: true, asLocalhost: true } });
+            const network = await gateway.getNetwork('mychannel');
+            const contract = network.getContract('ehrChainCode');
+            const chaincodeArgs = { ...args };
+            delete chaincodeArgs.chaincodeFcn;
+            const buffer = await contract.submitTransaction(args.chaincodeFcn, JSON.stringify(chaincodeArgs));
+            gateway.disconnect();
+            return {
+                statusCode: 200,
+                userID: userID,
+                role: userRole,
+                message: `${userID} already enrolled, chaincode called successfully.`,
+                chaincodeRes: buffer.toString()
+            };
+        }
         return {
             statusCode: 200,
             message: `${userID} has already been enrolled.`
@@ -102,7 +120,7 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
     // Neu co chaincode function can goi (vd: onboardPatient, onboardDoctor...)
     if (args && args.chaincodeFcn) {
         const gateway = new Gateway();
-        await gateway.connect(ccp, { wallet, identity: submitterId, discovery: { enabled: false } });
+        await gateway.connect(ccp, { wallet, identity: submitterId, discovery: { enabled: true, asLocalhost: true } });
         const network = await gateway.getNetwork('mychannel');
         const contract = network.getContract('ehrChainCode');
 
@@ -143,7 +161,17 @@ const getRoleFromCert = (certPem) => {
     return null;
 };
 
+// Fallback: derive role from userId for CA-enrolled admins that have no cert attrs
+const deriveRoleFromUserId = (userId) => {
+    const map = {
+        hospitalAdmin: 'hospital',
+        insuranceAdmin: 'insurance',
+    };
+    return map[userId] || null;
+};
+
 const login = async (userID) => {
+    userID = userID.trim();
 
     // Create a new file system based wallet for managing identities.
     const walletPath = path.join(process.cwd(), 'wallet');
@@ -157,7 +185,7 @@ const login = async (userID) => {
         throw new Error(`User ${userID} not found. Please register first.`);
     }
 
-    const role = getRoleFromCert(identity.credentials.certificate);
+    const role = getRoleFromCert(identity.credentials.certificate) || deriveRoleFromUserId(userID);
     if (!role) throw new Error(`Cannot determine role for user ${userID}. Please re-register.`);
 
     return {

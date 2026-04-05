@@ -1,8 +1,70 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getAllRecordsByPatientId, getRecordById, queryHistoryOfAsset } from '../services/api'
+import { getAllRecordsByPatientId, queryHistoryOfAsset } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiFileText, FiSearch, FiClock, FiChevronDown, FiChevronUp } from 'react-icons/fi'
+import { FiFileText, FiSearch, FiClock, FiChevronDown, FiChevronUp, FiUser, FiActivity, FiPackage } from 'react-icons/fi'
+
+const routeLabel = { oral: 'Uống', iv: 'Tiêm TM', im: 'Tiêm bắp', sc: 'Tiêm dưới da', topical: 'Bôi ngoài', inhaled: 'Hít', rectal: 'Trực tràng', sublingual: 'Ngậm lưỡi' }
+const timingLabel = { before_meal: 'Trước ăn', after_meal: 'Sau ăn', with_meal: 'Trong khi ăn', empty_stomach: 'Lúc đói', bedtime: 'Trước ngủ', morning: 'Buổi sáng', as_needed: 'Khi cần' }
+const durationUnitLabel = { days: 'ngày', weeks: 'tuần', months: 'tháng' }
+
+function DiagnosisCard({ diagnosis }) {
+  const d = typeof diagnosis === 'string' ? JSON.parse(diagnosis) : diagnosis
+  if (!d) return <p className="text-gray-400 text-sm">Không có dữ liệu</p>
+  const primary = d.primary || {}
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-bold">{primary.icdCode || '—'}</span>
+        <span className="text-sm font-medium text-gray-800">{primary.description || '—'}</span>
+      </div>
+      {d.secondary?.length > 0 && (
+        <div className="space-y-1">
+          {d.secondary.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 pl-4">
+              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{s.icdCode}</span>
+              <span className="text-xs text-gray-600">{s.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {d.notes && <p className="text-xs text-gray-500 italic">Ghi chú: {d.notes}</p>}
+    </div>
+  )
+}
+
+function PrescriptionCard({ prescription }) {
+  const p = typeof prescription === 'string' ? JSON.parse(prescription) : prescription
+  const meds = p?.medications || []
+  if (meds.length === 0) return <p className="text-gray-400 text-sm">Không có đơn thuốc</p>
+  return (
+    <div className="space-y-2">
+      {meds.map((m, i) => (
+        <div key={i} className="bg-white border border-gray-100 rounded-lg p-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FiPackage className="text-green-500 text-sm flex-shrink-0" />
+              <span className="text-sm font-medium text-gray-800">{m.drugName}</span>
+              {m.drugCode && <span className="text-xs text-gray-400">({m.drugCode})</span>}
+            </div>
+            <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded">
+              {m.strength}{m.unit}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs text-gray-500 pl-5">
+            {m.dosage?.quantity && <span>{m.dosage.quantity} viên/lần</span>}
+            {m.dosage?.frequency && <span>· {m.dosage.frequency} lần/ngày</span>}
+            {m.dosage?.route && <span>· {routeLabel[m.dosage.route] || m.dosage.route}</span>}
+            {m.dosage?.timing && <span>· {timingLabel[m.dosage.timing] || m.dosage.timing}</span>}
+            {m.dosage?.duration && (
+              <span>· {m.dosage.duration} {durationUnitLabel[m.dosage.durationUnit] || m.dosage.durationUnit}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function PatientRecords() {
   const { user } = useAuth()
@@ -13,9 +75,7 @@ export default function PatientRecords() {
   const [searchPatientId, setSearchPatientId] = useState('')
 
   useEffect(() => {
-    if (user.role === 'patient') {
-      loadRecords(user.userId)
-    }
+    if (user.role === 'patient') loadRecords(user.userId)
   }, [])
 
   const loadRecords = async (patientId) => {
@@ -23,7 +83,7 @@ export default function PatientRecords() {
     try {
       const res = await getAllRecordsByPatientId({ userId: user.userId, patientId })
       const raw = res.data.data
-      const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || [])
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
       setRecords(data)
     } catch {
       toast.error('Không thể tải hồ sơ')
@@ -33,10 +93,8 @@ export default function PatientRecords() {
   }
 
   const loadHistory = async (assetId) => {
-    if (history[assetId]) {
-      setExpandedId(expandedId === assetId ? null : assetId)
-      return
-    }
+    if (expandedId === assetId) { setExpandedId(null); return }
+    if (history[assetId]) { setExpandedId(assetId); return }
     try {
       const res = await queryHistoryOfAsset({ userId: user.userId, recordId: assetId })
       const raw = res.data
@@ -59,7 +117,6 @@ export default function PatientRecords() {
         <p className="text-gray-500 mt-1">Xem và theo dõi lịch sử khám bệnh</p>
       </div>
 
-      {/* Search for doctors/admins */}
       {user.role !== 'patient' && (
         <div className="card">
           <div className="flex gap-3">
@@ -96,66 +153,71 @@ export default function PatientRecords() {
 
             return (
               <div key={i} className="card">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
-                    <FiFileText className="text-primary-600" />
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FiFileText className="text-primary-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">{key}</p>
+                      <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
+                        <span className="flex items-center gap-1"><FiUser className="text-xs" /> {val.doctorId || 'N/A'}</span>
+                        {val.version && <span className="flex items-center gap-1"><FiActivity className="text-xs" /> v{val.version}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-gray-900">{key}</h3>
-                      <span className="text-xs text-gray-400">
-                        {val.createdAt ? new Date(val.createdAt).toLocaleDateString('vi-VN') : ''}
-                      </span>
+                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
+                    {val.createdAt ? new Date(val.createdAt).toLocaleDateString('vi-VN') : ''}
+                  </span>
+                </div>
+
+                {/* Body */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Chẩn đoán</p>
+                    <div className="bg-blue-50/50 rounded-xl p-3">
+                      <DiagnosisCard diagnosis={val.diagnosis} />
                     </div>
-
-                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase mb-1">Chẩn đoán</p>
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <pre className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {typeof val.diagnosis === 'object' ? JSON.stringify(val.diagnosis, null, 2) : val.diagnosis || 'N/A'}
-                          </pre>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase mb-1">Đơn thuốc</p>
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <pre className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {typeof val.prescription === 'object' ? JSON.stringify(val.prescription, null, 2) : val.prescription || 'N/A'}
-                          </pre>
-                        </div>
-                      </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Đơn thuốc</p>
+                    <div className="bg-green-50/50 rounded-xl p-3">
+                      <PrescriptionCard prescription={val.prescription} />
                     </div>
-
-                    <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
-                      <span>Bác sĩ: <strong>{val.doctorId || 'N/A'}</strong></span>
-                      {val.version && <span>Phiên bản: {val.version}</span>}
-                    </div>
-
-                    {/* History toggle */}
-                    <button
-                      onClick={() => loadHistory(key)}
-                      className="mt-3 text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
-                    >
-                      <FiClock />
-                      Lịch sử thay đổi
-                      {isExpanded ? <FiChevronUp /> : <FiChevronDown />}
-                    </button>
-
-                    {isExpanded && history[key] && (
-                      <div className="mt-3 border-l-2 border-primary-200 pl-4 space-y-3">
-                        {history[key].map((h, j) => (
-                          <div key={j} className="text-sm">
-                            <p className="text-gray-500">TxId: <code className="text-xs">{h.TxId?.slice(0, 16)}...</code></p>
-                            <pre className="bg-gray-50 rounded p-2 mt-1 text-xs overflow-x-auto">
-                              {JSON.stringify(h.Value, null, 2)}
-                            </pre>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </div>
+
+                {/* History toggle */}
+                <button
+                  onClick={() => loadHistory(key)}
+                  className="mt-4 text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                >
+                  <FiClock />
+                  Lịch sử thay đổi
+                  {isExpanded ? <FiChevronUp /> : <FiChevronDown />}
+                </button>
+
+                {isExpanded && history[key] && (
+                  <div className="mt-3 border-l-2 border-primary-100 pl-4 space-y-3">
+                    {history[key].map((h, j) => (
+                      <div key={j} className="text-sm">
+                        <p className="text-gray-400 text-xs">
+                          TxId: <code>{h.TxId?.slice(0, 20)}…</code>
+                          {h.Timestamp && <span className="ml-2">{new Date(h.Timestamp).toLocaleString('vi-VN')}</span>}
+                        </p>
+                        <div className="mt-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="bg-blue-50/50 rounded-lg p-2">
+                            <DiagnosisCard diagnosis={h.Value?.diagnosis} />
+                          </div>
+                          <div className="bg-green-50/50 rounded-lg p-2">
+                            <PrescriptionCard prescription={h.Value?.prescription} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}

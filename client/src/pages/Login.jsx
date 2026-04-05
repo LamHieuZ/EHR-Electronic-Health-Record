@@ -19,7 +19,7 @@ export default function Login() {
     }
     setLoading(true)
     try {
-      const res = await loginPatient({ userId: form.userId })
+      const res = await loginPatient({ userId: form.userId.trim() })
       if (res.data.userID) {
         login({ userId: res.data.userID, role: res.data.role })
         toast.success('Đăng nhập thành công!')

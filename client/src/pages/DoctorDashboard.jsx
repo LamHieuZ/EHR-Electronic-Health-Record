@@ -1,30 +1,277 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { addRecord, updateRecord, getAllRecordsByPatientId } from '../services/api'
+import { addRecord, updateRecord, getAllRecordsByPatientId, getRecordById, getMyPatients } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiPlus, FiSearch, FiEdit, FiFileText, FiTrash2 } from 'react-icons/fi'
+import { FiPlus, FiSearch, FiEdit, FiFileText, FiTrash2, FiUser } from 'react-icons/fi'
 
-const severityOptions = [
-  { value: 'mild', label: 'Nhẹ' },
-  { value: 'moderate', label: 'Trung bình' },
-  { value: 'severe', label: 'Nặng' },
-  { value: 'critical', label: 'Nguy kịch' },
-]
-
-const emptyMed = { code: '', name: '', dosage: '', unit: 'mg', frequency: '', route: 'oral' }
+const emptyMed = { code: '', name: '', strength: '', unit: 'mg', quantity: '1', frequency: '', route: 'oral', timing: '', duration: '', durationUnit: 'days' }
 
 const routeOptions = [
   { value: 'oral', label: 'Uống' },
-  { value: 'IV', label: 'Tiêm tĩnh mạch (IV)' },
-  { value: 'IM', label: 'Tiêm bắp (IM)' },
-  { value: 'subcutaneous', label: 'Tiêm dưới da' },
+  { value: 'iv', label: 'Tiêm tĩnh mạch (IV)' },
+  { value: 'im', label: 'Tiêm bắp (IM)' },
+  { value: 'sc', label: 'Tiêm dưới da' },
   { value: 'topical', label: 'Bôi ngoài da' },
-  { value: 'inhalation', label: 'Hít' },
+  { value: 'inhaled', label: 'Hít' },
+  { value: 'rectal', label: 'Đường trực tràng' },
+  { value: 'sublingual', label: 'Ngậm dưới lưỡi' },
 ]
+
+const timingOptions = [
+  { value: '', label: '-- Không chọn --' },
+  { value: 'before_meal', label: 'Trước ăn' },
+  { value: 'after_meal', label: 'Sau ăn' },
+  { value: 'with_meal', label: 'Trong khi ăn' },
+  { value: 'empty_stomach', label: 'Lúc đói' },
+  { value: 'bedtime', label: 'Trước ngủ' },
+  { value: 'morning', label: 'Buổi sáng' },
+  { value: 'as_needed', label: 'Khi cần' },
+]
+
+function PatientIdInput({ value, onChange, patients, placeholder = 'patient001' }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  const filtered = patients.filter(
+    (p) => p.patientId.toLowerCase().includes(value.toLowerCase()) || (p.name && p.name.toLowerCase().includes(value.toLowerCase()))
+  )
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        className="input-field"
+        placeholder={placeholder}
+        required
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map((p) => (
+            <li
+              key={p.patientId}
+              onMouseDown={() => { onChange(p.patientId); setOpen(false) }}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-primary-50 cursor-pointer text-sm"
+            >
+              <FiUser className="text-primary-400 flex-shrink-0" />
+              <span className="font-medium text-gray-800">{p.patientId}</span>
+              {p.name && <span className="text-gray-400 truncate">— {p.name}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function DiagnosisFields({ form, setForm }) {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Chẩn đoán</h3>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Mã ICD-10 *</label>
+        <input
+          type="text"
+          value={form.diagCode}
+          onChange={(e) => setForm({ ...form, diagCode: e.target.value.toUpperCase() })}
+          className="input-field"
+          placeholder="VD: J11, A09, I10"
+          required
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả chẩn đoán *</label>
+        <input
+          type="text"
+          value={form.diagDesc}
+          onChange={(e) => setForm({ ...form, diagDesc: e.target.value })}
+          className="input-field"
+          placeholder="VD: Cúm mùa, Viêm phổi, Tăng huyết áp"
+          required
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú thêm</label>
+        <textarea
+          value={form.notes}
+          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          className="input-field h-16"
+          placeholder="Ghi chú bổ sung (không bắt buộc)"
+        />
+      </div>
+    </div>
+  )
+}
+
+function MedicationFields({ medications, formType, onAdd, onRemove, onUpdate }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Đơn thuốc</h3>
+        <button
+          type="button"
+          onClick={() => onAdd(formType)}
+          className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+        >
+          <FiPlus className="text-xs" /> Thêm thuốc
+        </button>
+      </div>
+      {medications.map((med, i) => (
+        <div key={i} className="bg-gray-50 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-600">Thuốc #{i + 1}</span>
+            {medications.length > 1 && (
+              <button type="button" onClick={() => onRemove(formType, i)} className="text-red-400 hover:text-red-600">
+                <FiTrash2 className="text-sm" />
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Mã ATC</label>
+              <input
+                type="text"
+                value={med.code}
+                onChange={(e) => onUpdate(formType, i, 'code', e.target.value.toUpperCase())}
+                className="input-field text-sm"
+                placeholder="VD: N02BE01"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Tên thuốc *</label>
+              <input
+                type="text"
+                value={med.name}
+                onChange={(e) => onUpdate(formType, i, 'name', e.target.value)}
+                className="input-field text-sm"
+                placeholder="VD: Paracetamol"
+                required
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Hàm lượng *</label>
+              <div className="flex">
+                <input
+                  type="number"
+                  min="0"
+                  value={med.strength}
+                  onChange={(e) => onUpdate(formType, i, 'strength', e.target.value)}
+                  className="input-field text-sm rounded-r-none flex-1"
+                  placeholder="500"
+                  required
+                />
+                <select
+                  value={med.unit}
+                  onChange={(e) => onUpdate(formType, i, 'unit', e.target.value)}
+                  className="input-field text-sm rounded-l-none border-l-0 w-20"
+                >
+                  <option value="mg">mg</option>
+                  <option value="g">g</option>
+                  <option value="ml">ml</option>
+                  <option value="mcg">mcg</option>
+                  <option value="IU">IU</option>
+                  <option value="unit">unit</option>
+                  <option value="tablet">tablet</option>
+                  <option value="capsule">capsule</option>
+                  <option value="drop">drop</option>
+                  <option value="puff">puff</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Số lượng/lần *</label>
+              <input
+                type="number"
+                min="1"
+                value={med.quantity}
+                onChange={(e) => onUpdate(formType, i, 'quantity', e.target.value)}
+                className="input-field text-sm"
+                placeholder="1"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Lần/ngày *</label>
+              <input
+                type="number"
+                min="1"
+                value={med.frequency}
+                onChange={(e) => onUpdate(formType, i, 'frequency', e.target.value)}
+                className="input-field text-sm"
+                placeholder="3"
+                required
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Đường dùng</label>
+              <select
+                value={med.route}
+                onChange={(e) => onUpdate(formType, i, 'route', e.target.value)}
+                className="input-field text-sm"
+              >
+                {routeOptions.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Thời điểm uống</label>
+              <select
+                value={med.timing}
+                onChange={(e) => onUpdate(formType, i, 'timing', e.target.value)}
+                className="input-field text-sm"
+              >
+                {timingOptions.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Số ngày dùng</label>
+              <div className="flex">
+                <input
+                  type="number"
+                  min="1"
+                  value={med.duration}
+                  onChange={(e) => onUpdate(formType, i, 'duration', e.target.value)}
+                  className="input-field text-sm rounded-r-none flex-1"
+                  placeholder="7"
+                />
+                <select
+                  value={med.durationUnit}
+                  onChange={(e) => onUpdate(formType, i, 'durationUnit', e.target.value)}
+                  className="input-field text-sm rounded-l-none border-l-0 w-24"
+                >
+                  <option value="days">ngày</option>
+                  <option value="weeks">tuần</option>
+                  <option value="months">tháng</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function DoctorDashboard() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('add')
+  const [myPatients, setMyPatients] = useState([])
   const [searchId, setSearchId] = useState('')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(false)
@@ -34,7 +281,6 @@ export default function DoctorDashboard() {
     patientId: '',
     diagCode: '',
     diagDesc: '',
-    diagSeverity: 'moderate',
     notes: '',
     medications: [{ ...emptyMed }],
   })
@@ -45,32 +291,81 @@ export default function DoctorDashboard() {
     recordId: '',
     diagCode: '',
     diagDesc: '',
-    diagSeverity: 'moderate',
     notes: '',
     medications: [{ ...emptyMed }],
   })
+  const [loadingRecord, setLoadingRecord] = useState(false)
+  const debounceRef = useRef(null)
+
+  useEffect(() => {
+    getMyPatients({ userId: user.userId })
+      .then(res => setMyPatients(res.data.data || []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!updateForm.patientId.trim() || !updateForm.recordId.trim()) return
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setLoadingRecord(true)
+      try {
+        const res = await getRecordById({ userId: user.userId, patientId: updateForm.patientId, recordId: updateForm.recordId })
+        const record = res.data?.data
+        if (!record) return
+        const diag = typeof record.diagnosis === 'string' ? JSON.parse(record.diagnosis) : record.diagnosis
+        const pres = typeof record.prescription === 'string' ? JSON.parse(record.prescription) : record.prescription
+        setUpdateForm(prev => ({
+          ...prev,
+          diagCode: diag?.primary?.icdCode || '',
+          diagDesc: diag?.primary?.description || '',
+          notes: diag?.notes || '',
+          medications: pres?.medications?.map(m => ({
+            code: m.drugCode || '',
+            name: m.drugName || '',
+            strength: String(m.strength || ''),
+            unit: m.unit || 'mg',
+            quantity: String(m.dosage?.quantity || '1'),
+            frequency: String(m.dosage?.frequency || ''),
+            route: m.dosage?.route || 'oral',
+            timing: m.dosage?.timing || '',
+            duration: m.dosage?.duration ? String(m.dosage.duration) : '',
+            durationUnit: m.dosage?.durationUnit || 'days',
+          })) || [{ ...emptyMed }],
+        }))
+        toast.success('Đã tải hồ sơ')
+      } catch {
+        // record not found, ignore
+      } finally {
+        setLoadingRecord(false)
+      }
+    }, 600)
+  }, [updateForm.patientId, updateForm.recordId])
 
   // Build JSON from form fields
   const buildDiagnosis = (form) =>
     JSON.stringify({
-      code: form.diagCode,
-      description: form.diagDesc,
-      severity: form.diagSeverity,
+      primary: { icdCode: form.diagCode, description: form.diagDesc },
       ...(form.notes ? { notes: form.notes } : {}),
     })
 
   const buildPrescription = (meds) =>
-    JSON.stringify(
-      meds
+    JSON.stringify({
+      medications: meds
         .filter((m) => m.name)
         .map((m) => ({
-          code: m.code,
-          name: m.name,
-          dosage: `${m.dosage}${m.unit}`,
-          frequency: m.frequency,
-          route: m.route,
-        }))
-    )
+          drugCode: m.code,
+          drugName: m.name,
+          strength: Number(m.strength),
+          unit: m.unit,
+          dosage: {
+            quantity: Number(m.quantity) || 1,
+            frequency: Number(m.frequency),
+            route: m.route,
+            ...(m.timing ? { timing: m.timing } : {}),
+            ...(m.duration ? { duration: Number(m.duration), durationUnit: m.durationUnit || 'days' } : {}),
+          },
+        })),
+    })
 
   // Medication helpers
   const addMed = (formType) => {
@@ -125,7 +420,6 @@ export default function DoctorDashboard() {
           patientId: '',
           diagCode: '',
           diagDesc: '',
-          diagSeverity: 'moderate',
           notes: '',
           medications: [{ ...emptyMed }],
         })
@@ -159,7 +453,6 @@ export default function DoctorDashboard() {
           recordId: '',
           diagCode: '',
           diagDesc: '',
-          diagSeverity: 'moderate',
           notes: '',
           medications: [{ ...emptyMed }],
         })
@@ -191,158 +484,6 @@ export default function DoctorDashboard() {
       setLoading(false)
     }
   }
-
-  // Reusable diagnosis fields
-  const DiagnosisFields = ({ form, setForm }) => (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Chẩn đoán</h3>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Mã ICD-10 *</label>
-          <input
-            type="text"
-            value={form.diagCode}
-            onChange={(e) => setForm({ ...form, diagCode: e.target.value.toUpperCase() })}
-            className="input-field"
-            placeholder="VD: J11, A09, I10"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Mức độ *</label>
-          <select
-            value={form.diagSeverity}
-            onChange={(e) => setForm({ ...form, diagSeverity: e.target.value })}
-            className="input-field"
-          >
-            {severityOptions.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả chẩn đoán *</label>
-        <input
-          type="text"
-          value={form.diagDesc}
-          onChange={(e) => setForm({ ...form, diagDesc: e.target.value })}
-          className="input-field"
-          placeholder="VD: Cúm mùa, Viêm phổi, Tăng huyết áp"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú thêm</label>
-        <textarea
-          value={form.notes}
-          onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          className="input-field h-16"
-          placeholder="Ghi chú bổ sung (không bắt buộc)"
-        />
-      </div>
-    </div>
-  )
-
-  // Reusable medication fields
-  const MedicationFields = ({ medications, formType }) => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Đơn thuốc</h3>
-        <button
-          type="button"
-          onClick={() => addMed(formType)}
-          className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
-        >
-          <FiPlus className="text-xs" /> Thêm thuốc
-        </button>
-      </div>
-      {medications.map((med, i) => (
-        <div key={i} className="bg-gray-50 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-600">Thuốc #{i + 1}</span>
-            {medications.length > 1 && (
-              <button type="button" onClick={() => removeMed(formType, i)} className="text-red-400 hover:text-red-600">
-                <FiTrash2 className="text-sm" />
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Mã ATC</label>
-              <input
-                type="text"
-                value={med.code}
-                onChange={(e) => updateMed(formType, i, 'code', e.target.value.toUpperCase())}
-                className="input-field text-sm"
-                placeholder="VD: N02BE01"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Tên thuốc *</label>
-              <input
-                type="text"
-                value={med.name}
-                onChange={(e) => updateMed(formType, i, 'name', e.target.value)}
-                className="input-field text-sm"
-                placeholder="VD: Paracetamol"
-                required
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Liều lượng *</label>
-              <div className="flex">
-                <input
-                  type="text"
-                  value={med.dosage}
-                  onChange={(e) => updateMed(formType, i, 'dosage', e.target.value)}
-                  className="input-field text-sm rounded-r-none flex-1"
-                  placeholder="500"
-                  required
-                />
-                <select
-                  value={med.unit}
-                  onChange={(e) => updateMed(formType, i, 'unit', e.target.value)}
-                  className="input-field text-sm rounded-l-none border-l-0 w-20"
-                >
-                  <option value="mg">mg</option>
-                  <option value="g">g</option>
-                  <option value="ml">ml</option>
-                  <option value="mcg">mcg</option>
-                  <option value="IU">IU</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Tần suất *</label>
-              <input
-                type="text"
-                value={med.frequency}
-                onChange={(e) => updateMed(formType, i, 'frequency', e.target.value)}
-                className="input-field text-sm"
-                placeholder="3 lần/ngày"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Đường dùng</label>
-              <select
-                value={med.route}
-                onChange={(e) => updateMed(formType, i, 'route', e.target.value)}
-                className="input-field text-sm"
-              >
-                {routeOptions.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 
   const tabs = [
     { id: 'add', label: 'Thêm bệnh án', icon: FiPlus },
@@ -379,14 +520,14 @@ export default function DoctorDashboard() {
           <form onSubmit={handleAddRecord} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
-              <input type="text" value={addForm.patientId} onChange={(e) => setAddForm({ ...addForm, patientId: e.target.value })} className="input-field" placeholder="patient001" required />
+              <PatientIdInput value={addForm.patientId} onChange={(v) => setAddForm({ ...addForm, patientId: v })} patients={myPatients} />
             </div>
 
             <hr className="border-gray-200" />
             <DiagnosisFields form={addForm} setForm={setAddForm} />
 
             <hr className="border-gray-200" />
-            <MedicationFields medications={addForm.medications} formType="add" />
+            <MedicationFields medications={addForm.medications} formType="add" onAdd={addMed} onRemove={removeMed} onUpdate={updateMed} />
 
             <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
               {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiPlus />}
@@ -404,11 +545,16 @@ export default function DoctorDashboard() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
-                <input type="text" value={updateForm.patientId} onChange={(e) => setUpdateForm({ ...updateForm, patientId: e.target.value })} className="input-field" required />
+                <PatientIdInput value={updateForm.patientId} onChange={(v) => setUpdateForm({ ...updateForm, patientId: v })} patients={myPatients} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Record ID *</label>
-                <input type="text" value={updateForm.recordId} onChange={(e) => setUpdateForm({ ...updateForm, recordId: e.target.value })} className="input-field" required />
+                <div className="relative">
+                  <input type="text" value={updateForm.recordId} onChange={(e) => setUpdateForm({ ...updateForm, recordId: e.target.value })} className="input-field pr-8" required />
+                  {loadingRecord && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
+                  )}
+                </div>
               </div>
             </div>
 
@@ -416,7 +562,7 @@ export default function DoctorDashboard() {
             <DiagnosisFields form={updateForm} setForm={setUpdateForm} />
 
             <hr className="border-gray-200" />
-            <MedicationFields medications={updateForm.medications} formType="update" />
+            <MedicationFields medications={updateForm.medications} formType="update" onAdd={addMed} onRemove={removeMed} onUpdate={updateMed} />
 
             <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
               {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiEdit />}

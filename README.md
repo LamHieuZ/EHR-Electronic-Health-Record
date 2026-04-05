@@ -8,22 +8,58 @@ A decentralized healthcare system for secure management of electronic health rec
 |-------|-----------|
 | **Blockchain** | Hyperledger Fabric 2.x, Fabric CA, CouchDB |
 | **Smart Contract** | JavaScript Chaincode (Fabric Contract API 2.5) |
-| **Backend** | Node.js, Express 5.x, Fabric Network SDK 2.2 |
-| **Frontend** | React 18, Vite, Tailwind CSS 3.4, React Router 6 |
+| **Backend** | Node.js 18+, Express 5.x, Fabric Network SDK 2.2 |
+| **Frontend** | React 18, Vite 5, Tailwind CSS 3.4, React Router 6, Axios |
 | **Explorer** | Hyperledger Explorer, PostgreSQL |
 | **Infrastructure** | Docker, Docker Compose |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    WSL / Linux                       │
+│                                                     │
+│  ┌───────────────────────────────────────────────┐  │
+│  │         Hyperledger Fabric Network            │  │
+│  │   Org1 (Hospital) ◄──────► Org2 (Insurance)  │  │
+│  │   Peer: port 7051            Peer: port 9051  │  │
+│  │   CouchDB: port 5984         CouchDB: 7984    │  │
+│  │   CA: port 7054              CA: port 8054    │  │
+│  │             Channel: mychannel                │  │
+│  │          Chaincode: ehrChainCode              │  │
+│  └───────────────────────────────────────────────┘  │
+│                        │ crypto/certs                │
+└────────────────────────┼────────────────────────────┘
+                         │ (copy to Windows)
+┌────────────────────────┼────────────────────────────┐
+│                   Windows Host                       │
+│                        │                            │
+│  ┌─────────────────────▼──────────────────────────┐ │
+│  │     Backend: Node.js + Express (port 5000)     │ │
+│  │     Fabric Network SDK → connects to WSL peers │ │
+│  └────────────────────────────────────────────────┘ │
+│                        │ REST API                    │
+│  ┌─────────────────────▼──────────────────────────┐ │
+│  │      Frontend: React + Vite (port 3000)        │ │
+│  └────────────────────────────────────────────────┘ │
+│                                                     │
+│  ┌────────────────────────────────────────────────┐ │
+│  │   Hyperledger Explorer (port 8080)  [optional] │ │
+│  └────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
 
 ## Project Structure
 
 ```
-EHR-main/
-├── client/                        # React frontend (port 5173)
+EHR-Hyperledger-Fabric-Project/
+├── client/                        # React frontend (port 3000)
 │   ├── src/
 │   │   ├── pages/                 # Login, Dashboard, Records, AccessControl, ...
 │   │   ├── components/            # Layout and shared UI components
 │   │   ├── context/               # AuthContext (state management)
-│   │   └── services/              # Axios API layer (30+ endpoints)
-│   └── package.json
+│   │   └── services/              # Axios API layer
+│   └── vite.config.js             # Dev server config (proxy /api → :5000)
 │
 ├── server-node-sdk/               # Express backend (port 5000)
 │   ├── app.js                     # API routes and server entry point
@@ -47,17 +83,19 @@ EHR-main/
 - **Docker** & **Docker Compose**
 - **Node.js** 18+
 - **Git**
-- OS: Linux / macOS / Windows (WSL recommended)
+- **OS:** Linux or Windows with WSL2 (Fabric network runs inside WSL; backend/frontend run on the Windows host)
 
 ## Setup & Installation
 
-### 1. Download Fabric Binaries
+> **Note for Windows users:** Steps 1–3 run inside WSL. Steps 4–6 run on the Windows host. The crypto materials generated in WSL must be copied to Windows before starting the backend.
+
+### 1. Download Fabric Binaries (WSL)
 
 ```bash
 ./install-fabric.sh
 ```
 
-### 2. Start the Blockchain Network
+### 2. Start the Blockchain Network (WSL)
 
 ```bash
 cd fabric-samples/test-network
@@ -66,7 +104,7 @@ cd fabric-samples/test-network
 ./network.sh up createChannel -ca -s couchdb
 ```
 
-### 3. Deploy the EHR Chaincode
+### 3. Deploy the EHR Chaincode (WSL)
 
 ```bash
 ./network.sh deployCC -ccn ehrChainCode \
@@ -74,11 +112,21 @@ cd fabric-samples/test-network
   -ccl javascript
 ```
 
-### 4. Register Admins & Onboard Organizations
+### 4. Copy Crypto Materials to Windows
+
+After the network is up, copy the generated organization certificates from WSL to your Windows project directory so the Node.js SDK (running on Windows) can access them:
+
+```bash
+# From WSL — copy the organizations folder to the server-node-sdk directory on Windows
+cp -r fabric-samples/test-network/organizations/ server-node-sdk/
+```
+
+### 5. Register Admins & Onboard Organizations (Windows)
 
 ```bash
 cd server-node-sdk/
 npm install
+
 # Register admins for both organizations
 node cert-script/registerOrg1Admin.js
 node cert-script/registerOrg2Admin.js
@@ -91,14 +139,14 @@ node cert-script/onboardInsuranceCompany.js
 node cert-script/onboardInsuranceAgent.js
 ```
 
-### 5. Start the Backend Server
+### 6. Start the Backend Server (Windows)
 
 ```bash
 cd server-node-sdk/
 npm run dev    # Runs on http://localhost:5000
 ```
 
-### 6. Start the Frontend
+### 7. Start the Frontend (Windows)
 
 ```bash
 cd client/
@@ -106,7 +154,7 @@ npm install
 npm run dev    # Runs on http://localhost:3000
 ```
 
-### 7. (Optional) Start Blockchain Explorer
+### 8. (Optional) Start Blockchain Explorer
 
 ```bash
 cd fabric-explorer/
@@ -185,6 +233,8 @@ cd fabric-samples/test-network && ./network.sh down
 
 Base URL: `http://localhost:5000`
 
+> All endpoints use **POST** and expect a JSON body with **named parameters** (not positional arrays).
+
 ### Authentication
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -262,7 +312,28 @@ Base URL: `http://localhost:5000`
 
 ## Data Validation Standards
 
-- **ICD-10** codes for diagnosis (format: A00 - Z99.9)
+- **ICD-10** codes for diagnosis (format: A00 – Z99.9)
 - **ATC** codes for medications
 - Medication dosage and unit validation
 - Route of administration validation (oral, IV, IM, subcutaneous, etc.)
+
+## Troubleshooting
+
+**Backend cannot connect to Fabric peers**
+- Ensure the Fabric network is running in WSL (`./network.sh up ...`).
+- Verify that the `organizations/` crypto folder was copied from WSL to the `server-node-sdk/` directory on Windows after the network started.
+- Check that peer hostnames in the connection profile resolve correctly from Windows (may need `/etc/hosts` entries pointing to the WSL IP).
+
+**`wallet/` identity errors on backend startup**
+- Re-run the `registerOrg1Admin.js` / `registerOrg2Admin.js` scripts after any `./network.sh down` + `up` cycle, because new crypto materials are generated each time.
+
+**Frontend shows blank page or API errors**
+- Confirm the backend is running on port 5000.
+- The Vite dev server proxies `/api` requests to `http://localhost:5000`; ensure there are no CORS errors in the browser console.
+
+**Chaincode endorsement failures**
+- Confirm the chaincode was deployed to **both** Org1 and Org2 peers before invoking transactions.
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).

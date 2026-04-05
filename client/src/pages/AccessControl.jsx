@@ -1,13 +1,34 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { grantAccess, revokeAccess } from '../services/api'
+import { grantAccess, revokeAccess, getPatientById } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiShield, FiUserCheck, FiUserX } from 'react-icons/fi'
+import { FiShield, FiUserCheck, FiUserX, FiUser, FiRefreshCw } from 'react-icons/fi'
 
 export default function AccessControl() {
   const { user } = useAuth()
   const [doctorId, setDoctorId] = useState('')
   const [loading, setLoading] = useState(false)
+  const [authorizedDoctors, setAuthorizedDoctors] = useState([])
+  const [loadingDoctors, setLoadingDoctors] = useState(false)
+
+  useEffect(() => {
+    loadAuthorizedDoctors()
+  }, [])
+
+  const loadAuthorizedDoctors = async () => {
+    setLoadingDoctors(true)
+    try {
+      const res = await getPatientById({ userId: user.userId, patientId: user.userId })
+      const raw = res.data.data
+      const patientData = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
+      setAuthorizedDoctors(patientData.authorizedDoctors || [])
+    } catch (err) {
+      console.error('loadAuthorizedDoctors error:', err?.response?.data || err?.message)
+      toast.error('Không tải được danh sách bác sĩ')
+    } finally {
+      setLoadingDoctors(false)
+    }
+  }
 
   const handleGrant = async () => {
     if (!doctorId.trim()) return toast.error('Vui lòng nhập Doctor ID')
@@ -17,6 +38,7 @@ export default function AccessControl() {
       if (res.data.success || res.data.data) {
         toast.success(`Đã cấp quyền cho bác sĩ ${doctorId}`)
         setDoctorId('')
+        loadAuthorizedDoctors()
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
@@ -35,6 +57,24 @@ export default function AccessControl() {
       if (res.data.success || res.data.data) {
         toast.success(`Đã thu hồi quyền của bác sĩ ${doctorId}`)
         setDoctorId('')
+        loadAuthorizedDoctors()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi kết nối')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRevokeById = async (id) => {
+    setLoading(true)
+    try {
+      const res = await revokeAccess({ userId: user.userId, patientId: user.userId, doctorIdToRevoke: id })
+      if (res.data.success || res.data.data) {
+        toast.success(`Đã thu hồi quyền của bác sĩ ${id}`)
+        loadAuthorizedDoctors()
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
@@ -84,6 +124,37 @@ export default function AccessControl() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Authorized doctors list */}
+      <div className="card max-w-lg">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900">Bác sĩ đã được cấp quyền</h3>
+          <button onClick={loadAuthorizedDoctors} disabled={loadingDoctors} className="text-gray-400 hover:text-gray-600">
+            <FiRefreshCw className={`text-sm ${loadingDoctors ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        {authorizedDoctors.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">Chưa cấp quyền cho bác sĩ nào</p>
+        ) : (
+          <div className="space-y-2">
+            {authorizedDoctors.map((id) => (
+              <div key={id} className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="flex items-center gap-2">
+                  <FiUser className="text-blue-500 text-sm" />
+                  <span className="text-sm font-medium text-blue-700">{id}</span>
+                </div>
+                <button
+                  onClick={() => handleRevokeById(id)}
+                  disabled={loading}
+                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                >
+                  <FiUserX className="text-xs" /> Thu hồi
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Info */}
