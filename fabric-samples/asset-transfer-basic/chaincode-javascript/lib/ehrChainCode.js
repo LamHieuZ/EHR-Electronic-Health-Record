@@ -679,7 +679,7 @@ class ehrChainCode extends Contract {
     // Lay tat ca chi nhanh bao hiem (agent)
     async getAllAgents(ctx) {
         const { role } = this.getCallerAttributes(ctx);
-        if (role !== 'insuranceAdmin') {
+        if (role !== 'insuranceAdmin' && role !== 'insurance') {
             throw new Error('Only insurance admin can view all agents');
         }
         const iterator = await ctx.stub.getStateByRange('', '');
@@ -726,20 +726,111 @@ class ehrChainCode extends Contract {
         }
 
         const allResults = [];
-        const iterator = await ctx.stub.getStateByRange('', '');
-        let result = await iterator.next();
-        while (!result.done) {
-            const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
+
+        // Regular keys (patient-, hospital-, doctor-, insurance-, agent-, etc.)
+        const rangeIterator = await ctx.stub.getStateByRange('', '');
+        let rangeResult = await rangeIterator.next();
+        while (!rangeResult.done) {
+            const strValue = Buffer.from(rangeResult.value.value.toString()).toString('utf8');
             let record;
             try {
                 record = JSON.parse(strValue);
             } catch (err) {
-                console.log(err);
                 record = strValue;
             }
-            allResults.push(record);
-            result = await iterator.next();
+            allResults.push({ Key: rangeResult.value.key, Value: record });
+            rangeResult = await rangeIterator.next();
         }
+        await rangeIterator.close();
+
+        // Composite keys: records
+        const recordIter = await ctx.stub.getStateByPartialCompositeKey('record', []);
+        let rRes = await recordIter.next();
+        while (!rRes.done) {
+            try {
+                const val = JSON.parse(rRes.value.value.toString('utf8'));
+                allResults.push({ Key: rRes.value.key, Value: val });
+            } catch (_) {}
+            rRes = await recordIter.next();
+        }
+        await recordIter.close();
+
+        // Composite keys: dispense
+        const dispIter = await ctx.stub.getStateByPartialCompositeKey('dispense', []);
+        let dRes = await dispIter.next();
+        while (!dRes.done) {
+            try {
+                const val = JSON.parse(dRes.value.value.toString('utf8'));
+                allResults.push({ Key: dRes.value.key, Value: val });
+            } catch (_) {}
+            dRes = await dispIter.next();
+        }
+        await dispIter.close();
+
+        // Composite keys: claim
+        const claimIter = await ctx.stub.getStateByPartialCompositeKey('claim', []);
+        let cRes = await claimIter.next();
+        while (!cRes.done) {
+            try {
+                const val = JSON.parse(cRes.value.value.toString('utf8'));
+                allResults.push({ Key: cRes.value.key, Value: val });
+            } catch (_) {}
+            cRes = await claimIter.next();
+        }
+        await claimIter.close();
+
+        // Composite keys: reward
+        const rewIter = await ctx.stub.getStateByPartialCompositeKey('reward', []);
+        let rwRes = await rewIter.next();
+        while (!rwRes.done) {
+            try {
+                const val = JSON.parse(rwRes.value.value.toString('utf8'));
+                allResults.push({ Key: rwRes.value.key, Value: val });
+            } catch (_) {}
+            rwRes = await rewIter.next();
+        }
+        await rewIter.close();
+
+        return stringify(allResults);
+    }
+
+    // Org2 (insurance) xem sổ cái của tổ chức bảo hiểm
+    async fetchOrg2Ledger(ctx) {
+        const mspId = ctx.clientIdentity.getMSPID();
+        const { role } = this.getCallerAttributes(ctx);
+        if (mspId !== 'Org2MSP' && role !== 'insurance' && role !== 'insuranceAdmin') {
+            throw new Error('Only Org2 (insurance) members can fetch Org2 ledger');
+        }
+
+        const allResults = [];
+
+        // Regular keys: insurance-*, agent-*
+        const rangeIterator = await ctx.stub.getStateByRange('', '');
+        let rangeResult = await rangeIterator.next();
+        while (!rangeResult.done) {
+            const key = rangeResult.value.key;
+            if (key.startsWith('insurance-') || key.startsWith('agent-')) {
+                try {
+                    const val = JSON.parse(rangeResult.value.value.toString('utf8'));
+                    allResults.push({ Key: key, Value: val });
+                } catch (_) {}
+            }
+            rangeResult = await rangeIterator.next();
+        }
+        await rangeIterator.close();
+
+        // Composite keys: claim
+        const claimIter = await ctx.stub.getStateByPartialCompositeKey('claim', []);
+        let cRes = await claimIter.next();
+        while (!cRes.done) {
+            try {
+                const val = JSON.parse(cRes.value.value.toString('utf8'));
+                allResults.push({ Key: cRes.value.key, Value: val });
+            } catch (_) {}
+            cRes = await claimIter.next();
+        }
+        await claimIter.close();
+
         return stringify(allResults);
     }
 
@@ -1247,13 +1338,13 @@ class ehrChainCode extends Contract {
         });
     }
 
-    // Xem log truy cap khan cap cua 1 benh nhan (chi hospital admin)
+    // Xem log truy cap khan cap cua 1 benh nhan (hospital admin hoac chinh benh nhan do)
     async getEmergencyLogs(ctx, args) {
         const { patientId } = JSON.parse(args);
-        const { role } = this.getCallerAttributes(ctx);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
 
-        if (role !== 'hospital') {
-            throw new Error('Only hospital admin can view emergency access logs');
+        if (role !== 'hospital' && !(role === 'patient' && callerId === patientId)) {
+            throw new Error('Only hospital admin or the patient themselves can view emergency logs');
         }
 
         const iterator = await ctx.stub.getStateByPartialCompositeKey('emergency', [patientId]);

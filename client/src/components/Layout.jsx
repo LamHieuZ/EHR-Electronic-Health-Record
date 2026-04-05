@@ -10,6 +10,7 @@ const roleLabels = {
   hospital: 'Bệnh viện',
   pharmacy: 'Nhà thuốc',
   insuranceAdmin: 'Công ty bảo hiểm',
+  insurance: 'Công ty bảo hiểm',
   agent: 'Chi nhánh bảo hiểm',
   researcher: 'Nghiên cứu',
 }
@@ -36,7 +37,7 @@ export default function Layout() {
     navigate('/login')
   }
 
-  const navItems = getNavItems(user?.role)
+  const navItems = getNavItems(user)
 
   return (
     <div className="min-h-screen flex">
@@ -131,7 +132,9 @@ export default function Layout() {
   )
 }
 
-function getNavItems(role) {
+function getNavItems(user) {
+  const role = user?.role
+  const userId = user?.userId
   const items = []
 
   if (role === 'doctor') {
@@ -150,16 +153,21 @@ function getNavItems(role) {
     items.push({ to: '/emergency', icon: FiAlertTriangle, label: 'Nhật ký khẩn cấp' })
   } else if (role === 'pharmacy') {
     items.push({ to: '/prescriptions', icon: FiActivity, label: 'Đơn thuốc' })
-  } else if (role === 'insuranceAdmin' || role === 'agent') {
+  } else if (role === 'insuranceAdmin' || role === 'insurance') {
+    items.push({ to: '/insurance', icon: FiUsers, label: 'Chi nhánh' })
+    items.push({ to: '/insurance', icon: FiDatabase, label: 'Sổ cái Blockchain' })
+  } else if (role === 'agent') {
     items.push({ to: '/insurance', icon: FiDollarSign, label: 'Yêu cầu bảo hiểm' })
   } else if (role === 'researcher') {
     items.push({ to: '/research', icon: FiUsers, label: 'Nghiên cứu' })
-  } else {
-    items.push({ to: '/admin/ledger', icon: FiDatabase, label: 'Sổ cái' })
-  }
-
-  if (role === 'admin' || role === 'hospital') {
-    items.push({ to: '/admin/ledger', icon: FiDatabase, label: 'Sổ cái Blockchain' })
+  } else if (role === 'admin' || role === 'hospital') {
+    if (userId === 'hospitalAdmin') {
+      items.push({ to: '/admin/ledger', icon: FiUsers, label: 'Bệnh viện & Bác sĩ' })
+      items.push({ to: '/admin/ledger', icon: FiGift, label: 'Phần thưởng' })
+      items.push({ to: '/admin/ledger', icon: FiDatabase, label: 'Sổ cái Blockchain' })
+    } else {
+      items.push({ to: '/admin/ledger', icon: FiShield, label: 'Bệnh viện' })
+    }
   }
 
   return items

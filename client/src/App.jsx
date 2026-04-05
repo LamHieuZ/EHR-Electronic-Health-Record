@@ -30,7 +30,7 @@ export default function App() {
       case 'doctor': return '/doctor'
       case 'admin': case 'hospital': return '/admin/ledger'
       case 'pharmacy': return '/prescriptions'
-      case 'insuranceAdmin': case 'agent': return '/insurance'
+      case 'insuranceAdmin': case 'insurance': case 'agent': return '/insurance'
       case 'researcher': return '/research'
       default: return '/dashboard'
     }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   createClaim, getClaimsByPatient, getAllClaims,
-  approveClaim, rejectClaim, getAllRecordsByPatientId, fetchInsuranceLedger, getAllAgents,
+  approveClaim, rejectClaim, getAllRecordsByPatientId, fetchInsuranceLedger, fetchOrg2Ledger, getAllAgents,
 } from '../services/api'
 import { toast } from 'react-toastify'
 import {
@@ -147,22 +147,79 @@ function ClaimCard({ claim, canReview, reviewForm, setReviewForm, onReview, load
 }
 
 // ============================================================
-// Blockchain tab (dùng chung, lọc claim)
+// Type helpers cho Org2 ledger
+// ============================================================
+const ORG2_TYPE = {
+  insurance: { label: 'Công ty BH',   bg: 'bg-yellow-100', text: 'text-yellow-700', icon: FiDollarSign },
+  agent:     { label: 'Chi nhánh BH', bg: 'bg-orange-100', text: 'text-orange-700', icon: FiBriefcase },
+  claim:     { label: 'Yêu cầu BH',  bg: 'bg-blue-100',   text: 'text-blue-700',   icon: FiFileText },
+}
+
+function getOrg2Type(item) {
+  const val = item.Value || item
+  if (val.claimId) return 'claim'
+  if (val.agentId) return 'agent'
+  if (val.companyId && !val.agentId) return 'insurance'
+  return 'other'
+}
+
+function Org2EntryRow({ item, i }) {
+  const val = item.Value || item
+  const type = getOrg2Type(item)
+  const meta = ORG2_TYPE[type] || { label: 'Khác', bg: 'bg-gray-100', text: 'text-gray-600', icon: FiDatabase }
+  const Icon = meta.icon
+  const entryId = val.claimId || val.agentId || val.companyId || item.Key || `entry-${i}`
+  const date = val.timestamp ? new Date(val.timestamp).toLocaleDateString('vi-VN') : null
+
+  return (
+    <details className="card group p-0 overflow-hidden">
+      <summary className="flex items-center gap-3 p-4 cursor-pointer list-none hover:bg-gray-50/50">
+        <div className={`w-8 h-8 ${meta.bg} ${meta.text} rounded-lg flex items-center justify-center flex-shrink-0`}>
+          <Icon className="text-sm" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm text-gray-900 truncate">{entryId}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${meta.bg} ${meta.text}`}>{meta.label}</span>
+            {type === 'claim' && val.status && <StatusBadge status={val.status} />}
+          </div>
+          <div className="flex gap-3 text-xs text-gray-400 mt-0.5 flex-wrap">
+            {val.name && <span>{val.name}</span>}
+            {val.patientId && <span><FiUser className="inline text-xs" /> {val.patientId}</span>}
+            {val.amount && <span>{Number(val.amount).toLocaleString('vi-VN')} VNĐ</span>}
+            {date && <span>{date}</span>}
+          </div>
+        </div>
+        <svg className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </summary>
+      <div className="px-4 pb-4 border-t border-gray-100">
+        <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap mt-3">
+          {JSON.stringify(val, null, 2)}
+        </pre>
+      </div>
+    </details>
+  )
+}
+
+// ============================================================
+// Org2 Ledger tab
 // ============================================================
 function BlockchainTab({ userId }) {
   const [ledger, setLedger] = useState([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
+  const [activeType, setActiveType] = useState('all')
 
   const load = async () => {
     setLoading(true)
     try {
-      const res = await fetchInsuranceLedger({ userId })
-      let raw = res.data.data
-      const claims = Array.isArray(raw) ? raw :
-        (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
-      setLedger(claims)
-      toast.success(`Đã tải ${claims.length} giao dịch bảo hiểm`)
+      const res = await fetchOrg2Ledger({ userId })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setLedger(data)
+      toast.success(`Đã tải ${data.length} bản ghi Org2`)
     } catch (err) {
       toast.error(err.response?.data?.error || 'Lỗi tải blockchain')
     } finally {
@@ -170,18 +227,25 @@ function BlockchainTab({ userId }) {
     }
   }
 
-  const filtered = ledger.filter(item =>
-    !filter || JSON.stringify(item).toLowerCase().includes(filter.toLowerCase())
-  )
+  const typeCounts = ledger.reduce((acc, item) => {
+    const t = getOrg2Type(item)
+    acc[t] = (acc[t] || 0) + 1
+    return acc
+  }, {})
 
-  const pending  = ledger.filter(i => (i.Value || i).status === 'pending').length
-  const approved = ledger.filter(i => (i.Value || i).status === 'approved').length
-  const rejected = ledger.filter(i => (i.Value || i).status === 'rejected').length
+  const filtered = ledger.filter(item => {
+    const matchType = activeType === 'all' || getOrg2Type(item) === activeType
+    const matchFilter = !filter || JSON.stringify(item).toLowerCase().includes(filter.toLowerCase())
+    return matchType && matchFilter
+  })
+
+  const pendingClaims  = ledger.filter(i => getOrg2Type(i) === 'claim' && (i.Value || i).status === 'pending').length
+  const approvedClaims = ledger.filter(i => getOrg2Type(i) === 'claim' && (i.Value || i).status === 'approved').length
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">Dữ liệu claim trên Hyperledger Fabric</p>
+        <p className="text-sm text-gray-500">Toàn bộ dữ liệu Org2 trên Hyperledger Fabric</p>
         <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
           <FiRefreshCw className={loading ? 'animate-spin' : ''} />
           {ledger.length === 0 ? 'Tải blockchain' : 'Làm mới'}
@@ -192,16 +256,33 @@ function BlockchainTab({ userId }) {
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Tổng claim', value: ledger.length, cls: 'text-primary-600', bg: 'bg-primary-50', icon: FiLayers },
-              { label: 'Chờ duyệt',  value: pending,       cls: 'text-yellow-600', bg: 'bg-yellow-50', icon: FiClock },
-              { label: 'Đã duyệt',   value: approved,      cls: 'text-green-600',  bg: 'bg-green-50',  icon: FiCheckCircle },
-              { label: 'Từ chối',    value: rejected,       cls: 'text-red-600',    bg: 'bg-red-50',    icon: FiXCircle },
+              { label: 'Tổng bản ghi',  value: ledger.length,               cls: 'text-primary-600', bg: 'bg-primary-50',  icon: FiLayers },
+              { label: 'Chi nhánh',     value: typeCounts.agent || 0,        cls: 'text-orange-600',  bg: 'bg-orange-50',   icon: FiBriefcase },
+              { label: 'Claim chờ',     value: pendingClaims,                cls: 'text-yellow-600',  bg: 'bg-yellow-50',   icon: FiClock },
+              { label: 'Claim duyệt',   value: approvedClaims,               cls: 'text-green-600',   bg: 'bg-green-50',    icon: FiCheckCircle },
             ].map(s => (
               <div key={s.label} className={`rounded-xl p-3 ${s.bg}`}>
                 <s.icon className={`text-lg mb-1 ${s.cls}`} />
                 <p className={`text-xl font-bold ${s.cls}`}>{s.value}</p>
                 <p className="text-xs text-gray-500">{s.label}</p>
               </div>
+            ))}
+          </div>
+
+          {/* Type filter */}
+          <div className="flex gap-2 flex-wrap">
+            {[{ id: 'all', label: 'Tất cả' }, ...Object.entries(ORG2_TYPE).map(([id, m]) => ({ id, label: m.label }))].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveType(t.id)}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors font-medium ${
+                  activeType === t.id
+                    ? 'bg-primary-100 border-primary-300 text-primary-700'
+                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                {t.label} {t.id !== 'all' && typeCounts[t.id] ? `(${typeCounts[t.id]})` : ''}
+              </button>
             ))}
           </div>
 
@@ -212,44 +293,14 @@ function BlockchainTab({ userId }) {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               className="input-field pl-10"
-              placeholder="Tìm theo Patient ID, Claim ID, trạng thái..."
+              placeholder="Tìm theo tên, ID, trạng thái..."
             />
           </div>
 
-          <p className="text-xs text-gray-400">Hiển thị {filtered.length} / {ledger.length} giao dịch</p>
+          <p className="text-xs text-gray-400">Hiển thị {filtered.length} / {ledger.length} bản ghi</p>
 
           <div className="space-y-2">
-            {filtered.map((item, i) => {
-              const val = item.Value || item
-              const claimId = val.claimId || item.Key || `entry-${i}`
-              const date = val.timestamp ? new Date(val.timestamp).toLocaleDateString('vi-VN') : null
-              return (
-                <details key={i} className="card group p-0 overflow-hidden">
-                  <summary className="flex items-center gap-3 p-4 cursor-pointer list-none hover:bg-gray-50/50">
-                    <div className="w-8 h-8 bg-yellow-100 text-yellow-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FiDollarSign className="text-sm" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-mono text-sm text-gray-900 truncate block">{claimId}</span>
-                      <div className="flex gap-3 text-xs text-gray-400 mt-0.5 flex-wrap">
-                        {val.patientId && <span><FiUser className="inline text-xs" /> {val.patientId}</span>}
-                        {val.amount && <span>{Number(val.amount).toLocaleString('vi-VN')} VNĐ</span>}
-                        {date && <span>{date}</span>}
-                      </div>
-                    </div>
-                    <StatusBadge status={val.status} />
-                    <svg className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </summary>
-                  <div className="px-4 pb-4 border-t border-gray-100">
-                    <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap mt-3">
-                      {JSON.stringify(val, null, 2)}
-                    </pre>
-                  </div>
-                </details>
-              )
-            })}
+            {filtered.map((item, i) => <Org2EntryRow key={i} item={item} i={i} />)}
           </div>
         </>
       )}
@@ -257,7 +308,7 @@ function BlockchainTab({ userId }) {
       {ledger.length === 0 && !loading && (
         <div className="card text-center py-12">
           <FiDatabase className="text-4xl text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-400">Nhấn "Tải blockchain" để xem dữ liệu giao dịch</p>
+          <p className="text-gray-400">Nhấn "Tải blockchain" để xem sổ cái Org2</p>
         </div>
       )}
     </div>
@@ -268,30 +319,11 @@ function BlockchainTab({ userId }) {
 // VIEW: Công ty bảo hiểm (insuranceAdmin)
 // ============================================================
 function InsuranceAdminView({ user }) {
-  const [tab, setTab] = useState('claims')
-  const [claims, setClaims] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('pending')
-  const [reviewForm, setReviewForm] = useState(null)
-  const [reviewLoading, setReviewLoading] = useState(false)
+  const [tab, setTab] = useState('agents')
   const [agents, setAgents] = useState([])
   const [loadingAgents, setLoadingAgents] = useState(false)
 
-  useEffect(() => { loadAll() }, [])
-
-  const loadAll = async () => {
-    setLoading(true)
-    try {
-      const res = await getAllClaims({ userId: user.userId })
-      const raw = res.data?.data
-      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
-      setClaims(data)
-    } catch {
-      toast.error('Lỗi tải danh sách yêu cầu')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => { loadAgents() }, [])
 
   const loadAgents = async () => {
     setLoadingAgents(true)
@@ -307,82 +339,17 @@ function InsuranceAdminView({ user }) {
     }
   }
 
-  const handleReview = async (action) => {
-    if (!reviewForm) return
-    setReviewLoading(true)
-    try {
-      const fn = action === 'approve' ? approveClaim : rejectClaim
-      const res = await fn({ userId: user.userId, patientId: reviewForm.patientId, claimId: reviewForm.claimId, reviewNotes: reviewForm.notes })
-      if (res.data.success || res.data.data) {
-        toast.success(action === 'approve' ? 'Đã duyệt!' : 'Đã từ chối!')
-        setReviewForm(null)
-        loadAll()
-      } else {
-        toast.error(res.data.error || 'Thất bại')
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Lỗi')
-    } finally {
-      setReviewLoading(false)
-    }
-  }
-
-  const pending  = claims.filter(c => (c.Value || c).status === 'pending')
-  const approved = claims.filter(c => (c.Value || c).status === 'approved')
-  const rejected = claims.filter(c => (c.Value || c).status === 'rejected')
-  const totalApproved = approved.reduce((s, c) => s + Number((c.Value || c).amount || 0), 0)
-  const filtered = filter === 'all' ? claims : filter === 'pending' ? pending : filter === 'approved' ? approved : rejected
-
-  const claimTabs = [
-    { id: 'pending',  label: 'Chờ duyệt', count: pending.length,  cls: 'text-yellow-600' },
-    { id: 'approved', label: 'Đã duyệt',  count: approved.length, cls: 'text-green-600' },
-    { id: 'rejected', label: 'Từ chối',   count: rejected.length, cls: 'text-red-600' },
-    { id: 'all',      label: 'Tất cả',    count: claims.length,   cls: 'text-gray-600' },
-  ]
-
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Công ty bảo hiểm</h1>
-        <p className="text-gray-500 mt-1">{user.userId} — Quản lý toàn bộ yêu cầu bồi thường</p>
+        <p className="text-gray-500 mt-1">{user.userId} — Quản lý chi nhánh và sổ cái</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="card py-4">
-          <p className="text-2xl font-bold text-yellow-600">{pending.length}</p>
-          <p className="text-sm text-gray-500 mt-0.5">Chờ xét duyệt</p>
-        </div>
-        <div className="card py-4">
-          <p className="text-2xl font-bold text-green-600">{approved.length}</p>
-          <p className="text-sm text-gray-500 mt-0.5">Đã duyệt</p>
-        </div>
-        <div className="card py-4">
-          <p className="text-2xl font-bold text-red-600">{rejected.length}</p>
-          <p className="text-sm text-gray-500 mt-0.5">Từ chối</p>
-        </div>
-        <div className="card py-4">
-          <div className="flex items-center gap-1">
-            <FiTrendingUp className="text-primary-500 text-sm" />
-            <p className="text-lg font-bold text-gray-900 truncate">
-              {totalApproved.toLocaleString('vi-VN')}
-            </p>
-          </div>
-          <p className="text-sm text-gray-500 mt-0.5">VNĐ đã duyệt</p>
-        </div>
-      </div>
-
-      {/* Main tabs */}
+      {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
         <button
-          onClick={() => setTab('claims')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'claims' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          <FiDollarSign className="text-xs" /> Yêu cầu bảo hiểm
-        </button>
-        <button
-          onClick={() => { setTab('agents'); if (agents.length === 0) loadAgents() }}
+          onClick={() => setTab('agents')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'agents' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           <FiBriefcase className="text-xs" /> Chi nhánh
@@ -394,58 +361,9 @@ function InsuranceAdminView({ user }) {
           onClick={() => setTab('blockchain')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'blockchain' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
-          <FiDatabase className="text-xs" /> Blockchain
+          <FiDatabase className="text-xs" /> Sổ cái Blockchain
         </button>
       </div>
-
-      {tab === 'claims' && (
-        <>
-          {/* Sub filter tabs */}
-          <div className="flex gap-1 border-b border-gray-100">
-            {claimTabs.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setFilter(t.id)}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${filter === t.id ? 'border-primary-400 text-primary-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-              >
-                <FiFilter className="text-xs" />
-                {t.label}
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${filter === t.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {t.count}
-                </span>
-              </button>
-            ))}
-            <button onClick={loadAll} disabled={loading} className="ml-auto px-3 py-2 text-xs text-gray-400 hover:text-gray-600">
-              {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" /> : '↻ Tải lại'}
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center h-40">
-              <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="card text-center py-12">
-              <FiDollarSign className="text-4xl text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-400">Không có yêu cầu nào</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map((claim, i) => (
-                <ClaimCard
-                  key={i}
-                  claim={claim}
-                  canReview={true}
-                  reviewForm={reviewForm}
-                  setReviewForm={setReviewForm}
-                  onReview={handleReview}
-                  loading={reviewLoading}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      )}
 
       {tab === 'agents' && (
         <div className="space-y-4">
@@ -467,49 +385,30 @@ function InsuranceAdminView({ user }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {agents.map((agent, i) => {
-                const claimsOfAgent = claims.filter(c => (c.Value || c).reviewedBy === agent.agentId)
-                const approvedByAgent = claimsOfAgent.filter(c => (c.Value || c).status === 'approved').length
-                const rejectedByAgent = claimsOfAgent.filter(c => (c.Value || c).status === 'rejected').length
-                return (
-                  <div key={i} className="card space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <FiBriefcase className="text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 truncate">{agent.name || agent.agentId}</p>
-                        <p className="text-xs text-gray-400 font-mono">{agent.agentId}</p>
-                      </div>
+              {agents.map((agent, i) => (
+                <div key={i} className="card space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <FiBriefcase className="text-orange-600" />
                     </div>
-
-                    {agent.city && (
-                      <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                        <FiMapPin className="text-xs flex-shrink-0" />
-                        {agent.city}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-green-600">{approvedByAgent}</p>
-                        <p className="text-xs text-gray-400">Đã duyệt</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-red-500">{rejectedByAgent}</p>
-                        <p className="text-xs text-gray-400">Từ chối</p>
-                      </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{agent.name || agent.agentId}</p>
+                      <p className="text-xs text-gray-400 font-mono">{agent.agentId}</p>
                     </div>
-
-                    {agent.timestamp && (
-                      <p className="text-xs text-gray-400 flex items-center gap-1">
-                        <FiClock className="text-xs" />
-                        Tham gia: {new Date(agent.timestamp).toLocaleDateString('vi-VN')}
-                      </p>
-                    )}
                   </div>
-                )
-              })}
+                  {agent.city && (
+                    <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                      <FiMapPin className="text-xs flex-shrink-0" />{agent.city}
+                    </div>
+                  )}
+                  {agent.timestamp && (
+                    <p className="text-xs text-gray-400 flex items-center gap-1">
+                      <FiClock className="text-xs" />
+                      Tham gia: {new Date(agent.timestamp).toLocaleDateString('vi-VN')}
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -880,7 +779,7 @@ function PatientView({ user }) {
 // ============================================================
 export default function InsuranceClaims() {
   const { user } = useAuth()
-  if (user.role === 'insuranceAdmin') return <InsuranceAdminView user={user} />
+  if (user.role === 'insuranceAdmin' || user.role === 'insurance') return <InsuranceAdminView user={user} />
   if (user.role === 'agent')          return <AgentView user={user} />
   return <PatientView user={user} />
 }

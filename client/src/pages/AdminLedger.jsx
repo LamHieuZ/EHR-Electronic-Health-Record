@@ -1,39 +1,43 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { fetchLedger, getAllHospitals, getAllDoctors } from '../services/api'
+import { fetchLedger, getAllHospitals, getAllDoctors, onboardHospital, onboardDoctor, issueReward, getRewardsByPatient, getMyPatients } from '../services/api'
 import { toast } from 'react-toastify'
 import {
   FiDatabase, FiDownload, FiSearch, FiRefreshCw, FiUser, FiFileText,
   FiShield, FiDollarSign, FiPackage, FiActivity, FiAlertCircle, FiGift,
-  FiLayers, FiMapPin, FiChevronDown, FiChevronRight, FiUsers,
+  FiLayers, FiMapPin, FiChevronDown, FiChevronRight, FiUsers, FiPlus, FiStar, FiCheck, FiBriefcase,
 } from 'react-icons/fi'
 
 // ============================================================
 // Ledger helpers
 // ============================================================
 const TYPE_META = {
-  patient:    { label: 'Bệnh nhân',    color: 'blue',   icon: FiUser },
-  record:     { label: 'Bệnh án',      color: 'green',  icon: FiFileText },
-  doctor:     { label: 'Bác sĩ',       color: 'purple', icon: FiActivity },
-  hospital:   { label: 'Bệnh viện',    color: 'cyan',   icon: FiShield },
-  claim:      { label: 'Bảo hiểm',     color: 'yellow', icon: FiDollarSign },
-  dispense:   { label: 'Cấp thuốc',    color: 'teal',   icon: FiPackage },
-  emergency:  { label: 'Khẩn cấp',    color: 'red',    icon: FiAlertCircle },
-  reward:     { label: 'Phần thưởng', color: 'pink',   icon: FiGift },
-  researcher: { label: 'Nghiên cứu',  color: 'indigo', icon: FiDatabase },
+  patient:   { label: 'Bệnh nhân',       color: 'blue',   icon: FiUser },
+  record:    { label: 'Bệnh án',          color: 'green',  icon: FiFileText },
+  doctor:    { label: 'Bác sĩ',           color: 'purple', icon: FiActivity },
+  hospital:  { label: 'Bệnh viện',        color: 'cyan',   icon: FiShield },
+  insurance: { label: 'Công ty BH',       color: 'yellow', icon: FiDollarSign },
+  agent:     { label: 'Chi nhánh BH',     color: 'orange', icon: FiBriefcase },
+  claim:     { label: 'Yêu cầu BH',       color: 'amber',  icon: FiDollarSign },
+  dispense:  { label: 'Cấp thuốc',        color: 'teal',   icon: FiPackage },
+  emergency: { label: 'Khẩn cấp',         color: 'red',    icon: FiAlertCircle },
+  reward:    { label: 'Phần thưởng',      color: 'pink',   icon: FiGift },
+  researcher:{ label: 'Nghiên cứu',       color: 'indigo', icon: FiDatabase },
 }
 
 const COLOR_MAP = {
-  blue:   { badge: 'bg-blue-100 text-blue-700',     icon: 'bg-blue-100 text-blue-600',   num: 'text-blue-600' },
-  green:  { badge: 'bg-green-100 text-green-700',   icon: 'bg-green-100 text-green-600', num: 'text-green-600' },
+  blue:   { badge: 'bg-blue-100 text-blue-700',     icon: 'bg-blue-100 text-blue-600',     num: 'text-blue-600' },
+  green:  { badge: 'bg-green-100 text-green-700',   icon: 'bg-green-100 text-green-600',   num: 'text-green-600' },
   purple: { badge: 'bg-purple-100 text-purple-700', icon: 'bg-purple-100 text-purple-600', num: 'text-purple-600' },
-  cyan:   { badge: 'bg-cyan-100 text-cyan-700',     icon: 'bg-cyan-100 text-cyan-600',   num: 'text-cyan-600' },
+  cyan:   { badge: 'bg-cyan-100 text-cyan-700',     icon: 'bg-cyan-100 text-cyan-600',     num: 'text-cyan-600' },
   yellow: { badge: 'bg-yellow-100 text-yellow-700', icon: 'bg-yellow-100 text-yellow-600', num: 'text-yellow-600' },
-  teal:   { badge: 'bg-teal-100 text-teal-700',     icon: 'bg-teal-100 text-teal-600',   num: 'text-teal-600' },
-  red:    { badge: 'bg-red-100 text-red-700',       icon: 'bg-red-100 text-red-600',     num: 'text-red-600' },
-  pink:   { badge: 'bg-pink-100 text-pink-700',     icon: 'bg-pink-100 text-pink-600',   num: 'text-pink-600' },
+  amber:  { badge: 'bg-amber-100 text-amber-700',   icon: 'bg-amber-100 text-amber-600',   num: 'text-amber-600' },
+  orange: { badge: 'bg-orange-100 text-orange-700', icon: 'bg-orange-100 text-orange-600', num: 'text-orange-600' },
+  teal:   { badge: 'bg-teal-100 text-teal-700',     icon: 'bg-teal-100 text-teal-600',     num: 'text-teal-600' },
+  red:    { badge: 'bg-red-100 text-red-700',       icon: 'bg-red-100 text-red-600',       num: 'text-red-600' },
+  pink:   { badge: 'bg-pink-100 text-pink-700',     icon: 'bg-pink-100 text-pink-600',     num: 'text-pink-600' },
   indigo: { badge: 'bg-indigo-100 text-indigo-700', icon: 'bg-indigo-100 text-indigo-600', num: 'text-indigo-600' },
-  gray:   { badge: 'bg-gray-100 text-gray-700',     icon: 'bg-gray-100 text-gray-600',   num: 'text-gray-600' },
+  gray:   { badge: 'bg-gray-100 text-gray-700',     icon: 'bg-gray-100 text-gray-600',     num: 'text-gray-600' },
 }
 
 function getDocType(item) {
@@ -44,8 +48,10 @@ function getDocType(item) {
   if (val.claimId) return 'claim'
   if (val.dispenseId) return 'dispense'
   if (val.rewardId) return 'reward'
-  if (val.hospitalId && val.name && !val.patientId && !val.doctorId) return 'hospital'
+  if (val.agentId) return 'agent'
+  if (val.companyId && !val.agentId) return 'insurance'
   if (val.doctorId && val.hospitalId) return 'doctor'
+  if (val.hospitalId && val.name && !val.patientId && !val.doctorId) return 'hospital'
   if (val.pharmacyId) return 'dispense'
   if (val.researcherId) return 'researcher'
   return 'data'
@@ -55,6 +61,7 @@ function getEntryId(item) {
   const val = item.Value || item
   if (item.Key) return item.Key
   return val.recordId || val.claimId || val.dispenseId || val.rewardId
+    || val.agentId || val.companyId
     || val.patientId || val.doctorId || val.hospitalId || val.pharmacyId
     || val.researcherId || null
 }
@@ -88,6 +95,21 @@ function EntryPreview({ val, docType }) {
       <span>Record: <strong className="text-gray-700">{val.recordId}</strong></span>
       {val.dispensedBy && <span>Cấp bởi: <strong className="text-gray-700">{val.dispensedBy}</strong></span>}
       {val.timestamp && <span>{new Date(val.timestamp).toLocaleDateString('vi-VN')}</span>}
+    </div>
+  )
+  if (docType === 'insurance') return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+      <span>ID: <strong className="text-gray-700">{val.companyId}</strong></span>
+      {val.name && <span>Tên: <strong className="text-gray-700">{val.name}</strong></span>}
+      {val.city && <span>Thành phố: {val.city}</span>}
+    </div>
+  )
+  if (docType === 'agent') return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+      <span>ID: <strong className="text-gray-700">{val.agentId}</strong></span>
+      {val.name && <span>Tên: <strong className="text-gray-700">{val.name}</strong></span>}
+      {val.city && <span>Thành phố: {val.city}</span>}
+      {val.companyId && <span>Công ty: <strong className="text-gray-700">{val.companyId}</strong></span>}
     </div>
   )
   return (
@@ -203,6 +225,9 @@ function HospitalsTab({ userId }) {
   const [hospitals, setHospitals] = useState([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ hospitalId: '', name: '', city: '' })
+  const [submitting, setSubmitting] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -219,6 +244,26 @@ function HospitalsTab({ userId }) {
     }
   }
 
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const res = await onboardHospital({ adminId: userId, hospitalId: form.hospitalId, name: form.name, city: form.city })
+      if (res.data.success || res.data.message) {
+        toast.success(`Đã thêm bệnh viện ${form.name}!`)
+        setForm({ hospitalId: '', name: '', city: '' })
+        setShowForm(false)
+        load()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi thêm bệnh viện')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const filtered = hospitals.filter(h =>
     !filter || JSON.stringify(h).toLowerCase().includes(filter.toLowerCase())
   )
@@ -229,11 +274,69 @@ function HospitalsTab({ userId }) {
         <p className="text-sm text-gray-500">
           {hospitals.length > 0 ? `${hospitals.length} bệnh viện — bấm vào để xem bác sĩ` : 'Tải danh sách bệnh viện từ blockchain'}
         </p>
-        <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
-          <FiRefreshCw className={loading ? 'animate-spin' : ''} />
-          {hospitals.length === 0 ? 'Tải dữ liệu' : 'Làm mới'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowForm(v => !v)} className="btn-secondary flex items-center gap-2 text-sm">
+            <FiPlus /> Thêm bệnh viện
+          </button>
+          <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
+            <FiRefreshCw className={loading ? 'animate-spin' : ''} />
+            {hospitals.length === 0 ? 'Tải dữ liệu' : 'Làm mới'}
+          </button>
+        </div>
       </div>
+
+      {showForm && (
+        <div className="card border-2 border-cyan-100">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FiShield className="text-cyan-600" /> Thêm bệnh viện mới
+          </h3>
+          <form onSubmit={handleAdd} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hospital ID *</label>
+                <input
+                  type="text"
+                  value={form.hospitalId}
+                  onChange={(e) => setForm(f => ({ ...f, hospitalId: e.target.value }))}
+                  className="input-field"
+                  placeholder="VD: Hospital02"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên bệnh viện *</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                  className="input-field"
+                  placeholder="VD: Bệnh viện Đa khoa Trung Ương"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
+                <input
+                  type="text"
+                  value={form.city}
+                  onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))}
+                  className="input-field"
+                  placeholder="VD: Hà Nội"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
+                {submitting
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <FiPlus />}
+                Thêm bệnh viện
+              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {hospitals.length > 0 && (
         <div className="relative">
@@ -433,15 +536,437 @@ function LedgerTab({ userId }) {
 }
 
 // ============================================================
+// Rewards tab
+// ============================================================
+function RewardsTab({ userId }) {
+  const [patients, setPatients] = useState([])
+  const [loadingPatients, setLoadingPatients] = useState(false)
+  const [form, setForm] = useState({ patientId: '', amount: '', reason: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [selectedPatient, setSelectedPatient] = useState('')
+
+  useEffect(() => { loadPatients() }, [])
+
+  const loadPatients = async () => {
+    setLoadingPatients(true)
+    try {
+      const res = await getMyPatients({ userId })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setPatients(data)
+    } catch { toast.error('Lỗi tải danh sách bệnh nhân') }
+    finally { setLoadingPatients(false) }
+  }
+
+  const loadHistory = async (patientId) => {
+    if (!patientId) return
+    setLoadingHistory(true)
+    try {
+      const res = await getRewardsByPatient({ userId, patientId })
+      const raw = res.data?.data
+      setHistory(Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []))
+    } catch { setHistory([]) }
+    finally { setLoadingHistory(false) }
+  }
+
+  const handlePatientChange = (patientId) => {
+    setForm(f => ({ ...f, patientId, reason: '' }))
+    setSelectedPatient(patientId)
+    setHistory([])
+    if (patientId) loadHistory(patientId)
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!form.patientId || !form.amount || !form.reason) return
+    setSubmitting(true)
+    try {
+      const res = await issueReward({ userId, patientId: form.patientId, amount: Number(form.amount), reason: form.reason })
+      if (res.data.success || res.data.data) {
+        toast.success(`Đã phát thưởng ${Number(form.amount).toLocaleString('vi-VN')} điểm cho ${form.patientId}!`)
+        setForm(f => ({ ...f, amount: '', reason: '' }))
+        loadHistory(form.patientId)
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) { toast.error(err.response?.data?.error || 'Lỗi') }
+    finally { setSubmitting(false) }
+  }
+
+  const reasonPresets = [
+    'Đồng ý chia sẻ dữ liệu nghiên cứu',
+    'Tham gia chương trình khám định kỳ',
+    'Hoàn thành hồ sơ sức khỏe',
+    'Giới thiệu bệnh nhân mới',
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Issue reward form */}
+      <div className="card max-w-xl">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <FiGift className="text-purple-500" /> Phát phần thưởng
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Patient selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Bệnh nhân *</label>
+            <select
+              value={form.patientId}
+              onChange={(e) => handlePatientChange(e.target.value)}
+              className="input-field"
+              required
+              disabled={loadingPatients}
+            >
+              <option value="">{loadingPatients ? 'Đang tải...' : '-- Chọn bệnh nhân --'}</option>
+              {patients.map((p, i) => (
+                <option key={i} value={p.patientId || p}>
+                  {p.name ? `${p.patientId} — ${p.name}` : (p.patientId || p)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Amount */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Số điểm thưởng *</label>
+            <input
+              type="number"
+              min="1"
+              value={form.amount}
+              onChange={(e) => setForm(f => ({ ...f, amount: e.target.value }))}
+              className="input-field"
+              placeholder="VD: 100"
+              required
+            />
+          </div>
+
+          {/* Reason */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Lý do *</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {reasonPresets.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, reason: r }))}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    form.reason === r
+                      ? 'bg-purple-100 border-purple-300 text-purple-700'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-purple-200'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              value={form.reason}
+              onChange={(e) => setForm(f => ({ ...f, reason: e.target.value }))}
+              className="input-field"
+              placeholder="Hoặc nhập lý do..."
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting || !form.patientId || !form.amount || !form.reason}
+            className="btn-primary flex items-center gap-2"
+          >
+            {submitting
+              ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <FiPlus />
+            }
+            Phát thưởng
+          </button>
+        </form>
+      </div>
+
+      {/* Reward history for selected patient */}
+      {selectedPatient && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <FiStar className="text-purple-500" />
+              Lịch sử phần thưởng — <span className="font-mono text-sm">{selectedPatient}</span>
+            </h3>
+            <button onClick={() => loadHistory(selectedPatient)} disabled={loadingHistory} className="btn-secondary text-sm flex items-center gap-1">
+              <FiRefreshCw className={loadingHistory ? 'animate-spin' : ''} /> Tải lại
+            </button>
+          </div>
+
+          {loadingHistory ? (
+            <div className="flex items-center justify-center h-24">
+              <div className="w-6 h-6 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+            </div>
+          ) : history.length === 0 ? (
+            <div className="card text-center py-8">
+              <FiGift className="text-3xl text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-400 text-sm">Chưa có phần thưởng nào</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {history.map((r, i) => {
+                const val = r.Value || r
+                const claimed = val.status === 'claimed'
+                return (
+                  <div key={i} className="card flex items-center gap-4 py-3">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${claimed ? 'bg-gray-100' : 'bg-purple-100'}`}>
+                      {claimed ? <FiCheck className="text-gray-400" /> : <FiGift className="text-purple-600" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900">+{Number(val.amount).toLocaleString('vi-VN')} điểm</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${claimed ? 'bg-gray-100 text-gray-500' : 'bg-purple-100 text-purple-700'}`}>
+                          {claimed ? 'Đã nhận' : 'Chưa nhận'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{val.reason}</p>
+                      {val.timestamp && (
+                        <p className="text-xs text-gray-300 mt-0.5">{new Date(val.timestamp).toLocaleString('vi-VN')}</p>
+                      )}
+                    </div>
+                    {claimed && val.claimedAt && (
+                      <p className="text-xs text-gray-400 flex-shrink-0">
+                        Nhận: {new Date(val.claimedAt).toLocaleDateString('vi-VN')}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// VIEW: Bệnh viện (hospital role) — chỉ hiện bác sĩ của bệnh viện mình
+// ============================================================
+function HospitalView({ user }) {
+  const [doctors, setDoctors] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ doctorId: '', name: '', city: '' })
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => { loadDoctors() }, [])
+
+  const loadDoctors = async () => {
+    setLoading(true)
+    try {
+      const res = await getAllDoctors({ userId: user.userId, hospitalId: user.userId })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setDoctors(data)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi tải danh sách bác sĩ')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const res = await onboardDoctor({
+        hospitalUserId: user.userId,
+        hospitalId: user.userId,
+        doctorId: form.doctorId,
+        name: form.name,
+        city: form.city,
+      })
+      if (res.data.success || res.data.message) {
+        toast.success(`Đã thêm bác sĩ ${form.name}!`)
+        setForm({ doctorId: '', name: '', city: '' })
+        setShowForm(false)
+        loadDoctors()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi thêm bác sĩ')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const filtered = doctors.filter(d =>
+    !filter || JSON.stringify(d).toLowerCase().includes(filter.toLowerCase())
+  )
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Bệnh viện</h1>
+        <p className="text-gray-500 mt-1">{user.userId} — Danh sách bác sĩ</p>
+      </div>
+
+      <div className="card bg-gradient-to-r from-cyan-500 to-cyan-700 text-white">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
+            <FiShield className="text-2xl" />
+          </div>
+          <div>
+            <p className="text-cyan-100 text-sm">Tổng bác sĩ</p>
+            <p className="text-3xl font-bold">{doctors.length}</p>
+          </div>
+          <div className="ml-auto flex gap-2">
+            <button
+              onClick={() => setShowForm(v => !v)}
+              className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
+            >
+              <FiPlus /> Thêm bác sĩ
+            </button>
+            <button
+              onClick={loadDoctors}
+              disabled={loading}
+              className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
+            >
+              <FiRefreshCw className={loading ? 'animate-spin' : ''} /> Làm mới
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="card border-2 border-purple-100">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FiActivity className="text-purple-600" /> Thêm bác sĩ mới
+          </h3>
+          <form onSubmit={handleAdd} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Doctor ID *</label>
+                <input
+                  type="text"
+                  value={form.doctorId}
+                  onChange={(e) => setForm(f => ({ ...f, doctorId: e.target.value }))}
+                  className="input-field"
+                  placeholder="VD: Doctor02"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên *</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                  className="input-field"
+                  placeholder="VD: Nguyễn Văn B"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
+                <input
+                  type="text"
+                  value={form.city}
+                  onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))}
+                  className="input-field"
+                  placeholder="VD: TP. Hồ Chí Minh"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
+                {submitting
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <FiPlus />}
+                Thêm bác sĩ
+              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : (
+        <>
+          {doctors.length > 0 && (
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="input-field pl-10"
+                placeholder="Tìm theo tên, ID bác sĩ..."
+              />
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="card text-center py-16">
+              <FiActivity className="text-5xl text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-400">
+                {doctors.length === 0 ? 'Chưa có bác sĩ nào được đăng ký' : 'Không tìm thấy kết quả'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((doc, i) => (
+                <div key={i} className="card flex items-start gap-3">
+                  <div className="w-11 h-11 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <FiActivity className="text-purple-600 text-lg" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">{doc.name || doc.doctorId}</p>
+                    <p className="text-xs text-gray-400 font-mono">{doc.doctorId}</p>
+                    {doc.specialization && (
+                      <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                        {doc.specialization}
+                      </span>
+                    )}
+                    {doc.city && (
+                      <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                        <FiMapPin className="text-xs" />{doc.city}
+                      </p>
+                    )}
+                    {doc.timestamp && (
+                      <p className="text-xs text-gray-300 mt-0.5">
+                        Tham gia: {new Date(doc.timestamp).toLocaleDateString('vi-VN')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
 // Root
 // ============================================================
 export default function AdminLedger() {
   const { user } = useAuth()
   const [tab, setTab] = useState('hospitals')
 
+  if (user.role === 'hospital' && user.userId !== 'hospitalAdmin') {
+    return <HospitalView user={user} />
+  }
+
   const tabs = [
     { id: 'hospitals', label: 'Bệnh viện & Bác sĩ', icon: FiUsers },
-    { id: 'ledger',    label: 'Sổ cái Blockchain',  icon: FiDatabase },
+    { id: 'rewards',   label: 'Phần thưởng',         icon: FiGift },
+    { id: 'ledger',    label: 'Sổ cái Blockchain',   icon: FiDatabase },
   ]
 
   return (
@@ -471,6 +996,7 @@ export default function AdminLedger() {
       </div>
 
       {tab === 'hospitals' && <HospitalsTab userId={user.userId} />}
+      {tab === 'rewards'   && <RewardsTab   userId={user.userId} />}
       {tab === 'ledger'    && <LedgerTab    userId={user.userId} />}
     </div>
   )

@@ -53,6 +53,7 @@ export const getRewardsByPatient = (data) => api.post('/getRewardsByPatient', da
 // Admin
 export const fetchLedger = (data) => api.post('/fetchLedger', data)
 export const fetchInsuranceLedger = (data) => api.post('/fetchInsuranceLedger', data)
+export const fetchOrg2Ledger = (data) => api.post('/fetchOrg2Ledger', data)
 
 // Multi-org management
 export const onboardHospital = (data) => api.post('/onboardHospital', data)

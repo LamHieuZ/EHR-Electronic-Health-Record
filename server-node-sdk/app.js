@@ -265,10 +265,8 @@ app.post('/queryHistoryOfAsset', async function (req, res, next){
         let userId = req.body.userId;
         let recordId = req.body.recordId;
       
-        const result = await query.getQuery('queryHistoryOfAsset',{recordId}, userId);
-        // console.log("Response from chaincode", result);
-        //check response returned by login function and set API response accordingly
-        res.status(200).send(JSON.parse(result.data));
+        const result = await query.getQuery('queryHistoryOfAsset', { assetId: recordId }, userId);
+        res.status(200).send({ success: true, data: result });
     } catch (error) {       
         next(error);
     }
@@ -391,6 +389,15 @@ app.post('/fetchLedger', async function (req, res, next){
     } catch (error) {
         next(error);
     }
+});
+
+// Insurance admin (Org2) xem toan bo so cai Org2
+app.post('/fetchOrg2Ledger', async function (req, res, next) {
+    try {
+        const { userId } = req.body;
+        const result = await query.getQuery('fetchOrg2Ledger', {}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) { next(error); }
 });
 
 // Insurance admin (Org2) xem ledger claims
