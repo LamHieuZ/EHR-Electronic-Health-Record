@@ -28,9 +28,9 @@ async function main() {
         console.log(`Wallet path: ${walletPath}`);
 
         // Check to see if we've already enrolled the user.
-        const userIdentity = await wallet.get('insuranceAgent-Rama');
+        const userIdentity = await wallet.get('insuranceAgent-An');
         if (userIdentity) {
-            console.log('An identity for the user "insuranceAgent-Rama" already exists in the wallet');
+            console.log('An identity for the user "insuranceAgent-An" already exists in the wallet');
             return;
         }
 
@@ -49,16 +49,16 @@ async function main() {
         // Register the user, enroll the user, and import the new identity into the wallet.
         const secret = await ca.register({
             affiliation: 'org2.department1',
-            enrollmentID: 'insuranceAgent-Rama',
+            enrollmentID: 'insuranceAgent-An',
             role: 'client',
             attrs: [
                 { name: 'role', value: 'agent', ecert: true },
-                { name: 'uuid', value: 'insuranceAgent-Rama', ecert: true },
+                { name: 'uuid', value: 'insuranceAgent-An', ecert: true },
                 { name: 'companyId', value: 'insuranceCompany01', ecert: true }
             ],
         }, adminUser);
         const enrollment = await ca.enroll({
-            enrollmentID: 'insuranceAgent-Rama',
+            enrollmentID: 'insuranceAgent-An',
             enrollmentSecret: secret,
             attr_reqs: [
                 { name: "role", optional: false },
@@ -74,8 +74,8 @@ async function main() {
             mspId: 'Org2MSP',
             type: 'X.509',
         };
-        await wallet.put('insuranceAgent-Rama', x509Identity);
-        console.log('Successfully registered and enrolled insuranceAdmin user "insuranceAgent-Rama" and imported it into the wallet');
+        await wallet.put('insuranceAgent-An', x509Identity);
+        console.log('Successfully registered and enrolled insuranceAdmin user "insuranceAgent-An" and imported it into the wallet');
 
         // -----------------------Create Wallet with default balance on ledger------------------ 
                 // Create a new gateway for connecting to our peer node.
@@ -89,9 +89,9 @@ async function main() {
                 const contract = network.getContract('ehrChainCode');
 
                 const args = {
-                    agentId:"insuranceAgent-Rama",
-                    name:"Rama",
-                    city:"Amravati"
+                    agentId:"insuranceAgent-An",
+                    name:"An",
+                    city:"Da Nang"
                 }
 
                 const res = await contract.submitTransaction('onboardInsurance', JSON.stringify(args));
@@ -104,7 +104,7 @@ async function main() {
                 gateway.disconnect();
 
     } catch (error) {
-        console.error(`Failed to register user "insuranceAgent-Rama": ${error}`);
+        console.error(`Failed to register user "insuranceAgent-An": ${error}`);
         process.exit(1);
       }
 }

@@ -9,7 +9,8 @@ const roleLabels = {
   admin: 'Quản trị viên',
   hospital: 'Bệnh viện',
   pharmacy: 'Nhà thuốc',
-  insurance: 'Bảo hiểm',
+  insuranceAdmin: 'Công ty bảo hiểm',
+  agent: 'Chi nhánh bảo hiểm',
   researcher: 'Nghiên cứu',
 }
 
@@ -149,7 +150,7 @@ function getNavItems(role) {
     items.push({ to: '/emergency', icon: FiAlertTriangle, label: 'Nhật ký khẩn cấp' })
   } else if (role === 'pharmacy') {
     items.push({ to: '/prescriptions', icon: FiActivity, label: 'Đơn thuốc' })
-  } else if (role === 'insurance') {
+  } else if (role === 'insuranceAdmin' || role === 'agent') {
     items.push({ to: '/insurance', icon: FiDollarSign, label: 'Yêu cầu bảo hiểm' })
   } else if (role === 'researcher') {
     items.push({ to: '/research', icon: FiUsers, label: 'Nghiên cứu' })

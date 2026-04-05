@@ -676,6 +676,27 @@ class ehrChainCode extends Contract {
         return JSON.stringify(results);
     }
 
+    // Lay tat ca chi nhanh bao hiem (agent)
+    async getAllAgents(ctx) {
+        const { role } = this.getCallerAttributes(ctx);
+        if (role !== 'insuranceAdmin') {
+            throw new Error('Only insurance admin can view all agents');
+        }
+        const iterator = await ctx.stub.getStateByRange('', '');
+        const results = [];
+        let _res = await iterator.next();
+        while (!_res.done) {
+            if (_res.value.key.startsWith('agent-')) {
+                try {
+                    results.push(JSON.parse(_res.value.value.toString()));
+                } catch (e) { /* skip */ }
+            }
+            _res = await iterator.next();
+        }
+        await iterator.close();
+        return JSON.stringify(results);
+    }
+
     // Lay tat ca ho so do 1 bac si tao
     async getRecordsByDoctor(ctx, args) {
         const { doctorId } = JSON.parse(args);
@@ -776,7 +797,11 @@ class ehrChainCode extends Contract {
                     doctorId: record.doctorId,
                     prescription: record.prescription,
                     diagnosis: record.diagnosis.primary,
-                    timestamp: record.timestamp
+                    timestamp: record.timestamp,
+                    dispensed: record.dispensed || false,
+                    dispensedBy: record.dispensedBy || null,
+                    dispensedAt: record.dispensedAt || null,
+                    dispensedNotes: record.dispensedNotes || null,
                 });
             }
             _res = await iterator.next();

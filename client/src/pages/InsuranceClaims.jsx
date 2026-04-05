@@ -1,28 +1,740 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { createClaim, getClaimsByPatient, approveClaim, rejectClaim } from '../services/api'
+import {
+  createClaim, getClaimsByPatient, getAllClaims,
+  approveClaim, rejectClaim, getAllRecordsByPatientId, fetchInsuranceLedger, getAllAgents,
+} from '../services/api'
 import { toast } from 'react-toastify'
-import { FiDollarSign, FiPlus, FiSearch, FiCheck, FiX } from 'react-icons/fi'
+import {
+  FiDollarSign, FiPlus, FiCheck, FiX, FiClock, FiFileText,
+  FiChevronDown, FiCheckCircle, FiXCircle, FiUser, FiFilter, FiMapPin, FiBriefcase,
+  FiTrendingUp, FiAlertCircle, FiDatabase, FiRefreshCw, FiSearch, FiLayers,
+} from 'react-icons/fi'
 
+// ============================================================
+// Constants
+// ============================================================
 const claimTypes = ['hospitalization', 'outpatient', 'medication', 'surgery', 'diagnostic', 'emergency', 'other']
 const claimTypeLabels = {
   hospitalization: 'Nội trú', outpatient: 'Ngoại trú', medication: 'Thuốc',
   surgery: 'Phẫu thuật', diagnostic: 'Chẩn đoán', emergency: 'Cấp cứu', other: 'Khác',
 }
-const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
+const claimTypeColors = {
+  hospitalization: 'bg-blue-50 text-blue-700',
+  outpatient: 'bg-indigo-50 text-indigo-700',
+  medication: 'bg-green-50 text-green-700',
+  surgery: 'bg-red-50 text-red-700',
+  diagnostic: 'bg-purple-50 text-purple-700',
+  emergency: 'bg-orange-50 text-orange-700',
+  other: 'bg-gray-100 text-gray-700',
 }
 
-export default function InsuranceClaims() {
-  const { user } = useAuth()
+// ============================================================
+// Shared UI
+// ============================================================
+function StatusBadge({ status }) {
+  const map = {
+    pending:  { label: 'Chờ duyệt', icon: FiClock,        cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
+    approved: { label: 'Đã duyệt',  icon: FiCheckCircle,  cls: 'bg-green-50 text-green-700 border border-green-200' },
+    rejected: { label: 'Từ chối',   icon: FiXCircle,      cls: 'bg-red-50 text-red-700 border border-red-200' },
+  }
+  const s = map[status] || { label: status, icon: FiAlertCircle, cls: 'bg-gray-100 text-gray-600' }
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${s.cls}`}>
+      <s.icon className="text-xs" /> {s.label}
+    </span>
+  )
+}
+
+function ClaimCard({ claim, canReview, reviewForm, setReviewForm, onReview, loading }) {
+  const val = claim.Value || claim
+  const claimId = val.claimId || claim.Key || '—'
+  const date = val.timestamp ? new Date(val.timestamp).toLocaleDateString('vi-VN') : null
+  const updatedDate = val.updatedAt && val.updatedAt !== val.timestamp
+    ? new Date(val.updatedAt).toLocaleDateString('vi-VN') : null
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-yellow-50 rounded-xl flex items-center justify-center flex-shrink-0">
+            <FiDollarSign className="text-yellow-600" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-900 text-sm font-mono">{claimId}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${claimTypeColors[val.claimType] || 'bg-gray-100 text-gray-600'}`}>
+                {claimTypeLabels[val.claimType] || val.claimType}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
+              {(val.patientId || claim.patientName) && (
+                <span className="flex items-center gap-1 text-primary-600 font-medium">
+                  <FiUser className="text-xs" />
+                  {claim.patientName ? `${val.patientId} (${claim.patientName})` : val.patientId}
+                </span>
+              )}
+              {date && <span className="flex items-center gap-1"><FiClock className="text-xs" />{date}</span>}
+            </div>
+          </div>
+        </div>
+        <StatusBadge status={val.status} />
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="bg-gray-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-gray-400">Số tiền yêu cầu</p>
+          <p className="text-lg font-bold text-gray-900">
+            {Number(val.amount).toLocaleString('vi-VN')}
+            <span className="text-sm font-normal text-gray-500 ml-1">VNĐ</span>
+          </p>
+        </div>
+        {val.recordId && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+            <FiFileText className="text-xs flex-shrink-0" />
+            <span className="font-mono truncate max-w-[200px]">{val.recordId}</span>
+          </div>
+        )}
+      </div>
+
+      {val.description && (
+        <p className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border-l-4 border-yellow-200">
+          {val.description}
+        </p>
+      )}
+
+      {val.status !== 'pending' && (val.reviewedBy || val.reviewNotes) && (
+        <div className={`rounded-lg px-3 py-2 text-xs space-y-0.5 ${val.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          {val.reviewedBy && <p>Người xét duyệt: <strong>{val.reviewedBy}</strong></p>}
+          {updatedDate && <p>Ngày duyệt: {updatedDate}</p>}
+          {val.reviewNotes && <p>Ghi chú: {val.reviewNotes}</p>}
+        </div>
+      )}
+
+      {canReview && val.status === 'pending' && (
+        <div className="pt-1 border-t border-gray-100">
+          {reviewForm?.claimId === claimId ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={reviewForm.notes}
+                onChange={(e) => setReviewForm({ ...reviewForm, notes: e.target.value })}
+                className="input-field text-sm"
+                placeholder="Ghi chú xét duyệt (không bắt buộc)..."
+              />
+              <div className="flex gap-2">
+                <button onClick={() => onReview('approve')} disabled={loading} className="btn-success flex items-center gap-1 text-sm">
+                  <FiCheck /> Duyệt
+                </button>
+                <button onClick={() => onReview('reject')} disabled={loading} className="btn-danger flex items-center gap-1 text-sm">
+                  <FiX /> Từ chối
+                </button>
+                <button onClick={() => setReviewForm(null)} className="btn-secondary text-sm">Hủy</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setReviewForm({ claimId, patientId: val.patientId, notes: '' })}
+              className="btn-primary text-sm"
+            >
+              Xét duyệt
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// Blockchain tab (dùng chung, lọc claim)
+// ============================================================
+function BlockchainTab({ userId }) {
+  const [ledger, setLedger] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await fetchInsuranceLedger({ userId })
+      let raw = res.data.data
+      const claims = Array.isArray(raw) ? raw :
+        (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setLedger(claims)
+      toast.success(`Đã tải ${claims.length} giao dịch bảo hiểm`)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi tải blockchain')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filtered = ledger.filter(item =>
+    !filter || JSON.stringify(item).toLowerCase().includes(filter.toLowerCase())
+  )
+
+  const pending  = ledger.filter(i => (i.Value || i).status === 'pending').length
+  const approved = ledger.filter(i => (i.Value || i).status === 'approved').length
+  const rejected = ledger.filter(i => (i.Value || i).status === 'rejected').length
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">Dữ liệu claim trên Hyperledger Fabric</p>
+        <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
+          <FiRefreshCw className={loading ? 'animate-spin' : ''} />
+          {ledger.length === 0 ? 'Tải blockchain' : 'Làm mới'}
+        </button>
+      </div>
+
+      {ledger.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Tổng claim', value: ledger.length, cls: 'text-primary-600', bg: 'bg-primary-50', icon: FiLayers },
+              { label: 'Chờ duyệt',  value: pending,       cls: 'text-yellow-600', bg: 'bg-yellow-50', icon: FiClock },
+              { label: 'Đã duyệt',   value: approved,      cls: 'text-green-600',  bg: 'bg-green-50',  icon: FiCheckCircle },
+              { label: 'Từ chối',    value: rejected,       cls: 'text-red-600',    bg: 'bg-red-50',    icon: FiXCircle },
+            ].map(s => (
+              <div key={s.label} className={`rounded-xl p-3 ${s.bg}`}>
+                <s.icon className={`text-lg mb-1 ${s.cls}`} />
+                <p className={`text-xl font-bold ${s.cls}`}>{s.value}</p>
+                <p className="text-xs text-gray-500">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="relative">
+            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="input-field pl-10"
+              placeholder="Tìm theo Patient ID, Claim ID, trạng thái..."
+            />
+          </div>
+
+          <p className="text-xs text-gray-400">Hiển thị {filtered.length} / {ledger.length} giao dịch</p>
+
+          <div className="space-y-2">
+            {filtered.map((item, i) => {
+              const val = item.Value || item
+              const claimId = val.claimId || item.Key || `entry-${i}`
+              const date = val.timestamp ? new Date(val.timestamp).toLocaleDateString('vi-VN') : null
+              return (
+                <details key={i} className="card group p-0 overflow-hidden">
+                  <summary className="flex items-center gap-3 p-4 cursor-pointer list-none hover:bg-gray-50/50">
+                    <div className="w-8 h-8 bg-yellow-100 text-yellow-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FiDollarSign className="text-sm" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-mono text-sm text-gray-900 truncate block">{claimId}</span>
+                      <div className="flex gap-3 text-xs text-gray-400 mt-0.5 flex-wrap">
+                        {val.patientId && <span><FiUser className="inline text-xs" /> {val.patientId}</span>}
+                        {val.amount && <span>{Number(val.amount).toLocaleString('vi-VN')} VNĐ</span>}
+                        {date && <span>{date}</span>}
+                      </div>
+                    </div>
+                    <StatusBadge status={val.status} />
+                    <svg className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </summary>
+                  <div className="px-4 pb-4 border-t border-gray-100">
+                    <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap mt-3">
+                      {JSON.stringify(val, null, 2)}
+                    </pre>
+                  </div>
+                </details>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {ledger.length === 0 && !loading && (
+        <div className="card text-center py-12">
+          <FiDatabase className="text-4xl text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-400">Nhấn "Tải blockchain" để xem dữ liệu giao dịch</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// VIEW: Công ty bảo hiểm (insuranceAdmin)
+// ============================================================
+function InsuranceAdminView({ user }) {
+  const [tab, setTab] = useState('claims')
+  const [claims, setClaims] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('pending')
+  const [reviewForm, setReviewForm] = useState(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [agents, setAgents] = useState([])
+  const [loadingAgents, setLoadingAgents] = useState(false)
+
+  useEffect(() => { loadAll() }, [])
+
+  const loadAll = async () => {
+    setLoading(true)
+    try {
+      const res = await getAllClaims({ userId: user.userId })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setClaims(data)
+    } catch {
+      toast.error('Lỗi tải danh sách yêu cầu')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadAgents = async () => {
+    setLoadingAgents(true)
+    try {
+      const res = await getAllAgents({ userId: user.userId })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setAgents(data)
+    } catch {
+      toast.error('Lỗi tải danh sách chi nhánh')
+    } finally {
+      setLoadingAgents(false)
+    }
+  }
+
+  const handleReview = async (action) => {
+    if (!reviewForm) return
+    setReviewLoading(true)
+    try {
+      const fn = action === 'approve' ? approveClaim : rejectClaim
+      const res = await fn({ userId: user.userId, patientId: reviewForm.patientId, claimId: reviewForm.claimId, reviewNotes: reviewForm.notes })
+      if (res.data.success || res.data.data) {
+        toast.success(action === 'approve' ? 'Đã duyệt!' : 'Đã từ chối!')
+        setReviewForm(null)
+        loadAll()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi')
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
+  const pending  = claims.filter(c => (c.Value || c).status === 'pending')
+  const approved = claims.filter(c => (c.Value || c).status === 'approved')
+  const rejected = claims.filter(c => (c.Value || c).status === 'rejected')
+  const totalApproved = approved.reduce((s, c) => s + Number((c.Value || c).amount || 0), 0)
+  const filtered = filter === 'all' ? claims : filter === 'pending' ? pending : filter === 'approved' ? approved : rejected
+
+  const claimTabs = [
+    { id: 'pending',  label: 'Chờ duyệt', count: pending.length,  cls: 'text-yellow-600' },
+    { id: 'approved', label: 'Đã duyệt',  count: approved.length, cls: 'text-green-600' },
+    { id: 'rejected', label: 'Từ chối',   count: rejected.length, cls: 'text-red-600' },
+    { id: 'all',      label: 'Tất cả',    count: claims.length,   cls: 'text-gray-600' },
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Công ty bảo hiểm</h1>
+        <p className="text-gray-500 mt-1">{user.userId} — Quản lý toàn bộ yêu cầu bồi thường</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="card py-4">
+          <p className="text-2xl font-bold text-yellow-600">{pending.length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Chờ xét duyệt</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-2xl font-bold text-green-600">{approved.length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Đã duyệt</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-2xl font-bold text-red-600">{rejected.length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Từ chối</p>
+        </div>
+        <div className="card py-4">
+          <div className="flex items-center gap-1">
+            <FiTrendingUp className="text-primary-500 text-sm" />
+            <p className="text-lg font-bold text-gray-900 truncate">
+              {totalApproved.toLocaleString('vi-VN')}
+            </p>
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">VNĐ đã duyệt</p>
+        </div>
+      </div>
+
+      {/* Main tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        <button
+          onClick={() => setTab('claims')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'claims' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <FiDollarSign className="text-xs" /> Yêu cầu bảo hiểm
+        </button>
+        <button
+          onClick={() => { setTab('agents'); if (agents.length === 0) loadAgents() }}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'agents' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <FiBriefcase className="text-xs" /> Chi nhánh
+          {agents.length > 0 && (
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">{agents.length}</span>
+          )}
+        </button>
+        <button
+          onClick={() => setTab('blockchain')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'blockchain' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <FiDatabase className="text-xs" /> Blockchain
+        </button>
+      </div>
+
+      {tab === 'claims' && (
+        <>
+          {/* Sub filter tabs */}
+          <div className="flex gap-1 border-b border-gray-100">
+            {claimTabs.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setFilter(t.id)}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${filter === t.id ? 'border-primary-400 text-primary-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+              >
+                <FiFilter className="text-xs" />
+                {t.label}
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${filter === t.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {t.count}
+                </span>
+              </button>
+            ))}
+            <button onClick={loadAll} disabled={loading} className="ml-auto px-3 py-2 text-xs text-gray-400 hover:text-gray-600">
+              {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" /> : '↻ Tải lại'}
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="card text-center py-12">
+              <FiDollarSign className="text-4xl text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-400">Không có yêu cầu nào</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((claim, i) => (
+                <ClaimCard
+                  key={i}
+                  claim={claim}
+                  canReview={true}
+                  reviewForm={reviewForm}
+                  setReviewForm={setReviewForm}
+                  onReview={handleReview}
+                  loading={reviewLoading}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'agents' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">Danh sách chi nhánh thuộc công ty</p>
+            <button onClick={loadAgents} disabled={loadingAgents} className="btn-secondary flex items-center gap-2 text-sm">
+              <FiRefreshCw className={loadingAgents ? 'animate-spin' : ''} /> Tải lại
+            </button>
+          </div>
+
+          {loadingAgents ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+            </div>
+          ) : agents.length === 0 ? (
+            <div className="card text-center py-12">
+              <FiBriefcase className="text-4xl text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-400">Chưa có chi nhánh nào được đăng ký</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {agents.map((agent, i) => {
+                const claimsOfAgent = claims.filter(c => (c.Value || c).reviewedBy === agent.agentId)
+                const approvedByAgent = claimsOfAgent.filter(c => (c.Value || c).status === 'approved').length
+                const rejectedByAgent = claimsOfAgent.filter(c => (c.Value || c).status === 'rejected').length
+                return (
+                  <div key={i} className="card space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <FiBriefcase className="text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{agent.name || agent.agentId}</p>
+                        <p className="text-xs text-gray-400 font-mono">{agent.agentId}</p>
+                      </div>
+                    </div>
+
+                    {agent.city && (
+                      <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                        <FiMapPin className="text-xs flex-shrink-0" />
+                        {agent.city}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+                      <div className="text-center">
+                        <p className="text-lg font-bold text-green-600">{approvedByAgent}</p>
+                        <p className="text-xs text-gray-400">Đã duyệt</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-lg font-bold text-red-500">{rejectedByAgent}</p>
+                        <p className="text-xs text-gray-400">Từ chối</p>
+                      </div>
+                    </div>
+
+                    {agent.timestamp && (
+                      <p className="text-xs text-gray-400 flex items-center gap-1">
+                        <FiClock className="text-xs" />
+                        Tham gia: {new Date(agent.timestamp).toLocaleDateString('vi-VN')}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'blockchain' && <BlockchainTab userId={user.userId} />}
+    </div>
+  )
+}
+
+// ============================================================
+// VIEW: Chi nhánh bảo hiểm (agent)
+// ============================================================
+function AgentView({ user }) {
+  const [tab, setTab] = useState('pending')
+  const [claims, setClaims] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [reviewForm, setReviewForm] = useState(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [searchPatient, setSearchPatient] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => { loadAll() }, [])
+
+  const loadAll = async () => {
+    setLoading(true)
+    try {
+      const res = await getAllClaims({ userId: user.userId })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setClaims(data)
+    } catch {
+      toast.error('Lỗi tải danh sách yêu cầu')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleReview = async (action) => {
+    if (!reviewForm) return
+    setReviewLoading(true)
+    try {
+      const fn = action === 'approve' ? approveClaim : rejectClaim
+      const res = await fn({ userId: user.userId, patientId: reviewForm.patientId, claimId: reviewForm.claimId, reviewNotes: reviewForm.notes })
+      if (res.data.success || res.data.data) {
+        toast.success(action === 'approve' ? 'Đã duyệt!' : 'Đã từ chối!')
+        setReviewForm(null)
+        loadAll()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi')
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
+  const handleSearchPatient = async () => {
+    if (!searchPatient.trim()) return
+    setSearching(true)
+    try {
+      const res = await getClaimsByPatient({ userId: user.userId, patientId: searchPatient.trim() })
+      const raw = res.data.data
+      const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || [])
+      setSearchResults(data)
+      if (data.length === 0) toast.info('Không tìm thấy yêu cầu nào')
+    } catch {
+      toast.error('Lỗi tìm kiếm')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const pending  = claims.filter(c => (c.Value || c).status === 'pending')
+  const reviewed = claims.filter(c => (c.Value || c).reviewedBy === user.userId)
+
+  const mainTabs = [
+    { id: 'pending',  label: 'Chờ xử lý', count: pending.length  },
+    { id: 'reviewed', label: 'Đã xử lý',  count: reviewed.length },
+    { id: 'search',   label: 'Tra cứu',   count: null },
+  ]
+
+  const displayList = tab === 'pending' ? pending : tab === 'reviewed' ? reviewed : []
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Chi nhánh bảo hiểm</h1>
+        <p className="text-gray-500 mt-1">{user.userId} — Xử lý yêu cầu bồi thường</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="card py-4">
+          <p className="text-2xl font-bold text-yellow-600">{pending.length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Chờ xử lý</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-2xl font-bold text-blue-600">{reviewed.length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Tôi đã xử lý</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-2xl font-bold text-gray-600">{claims.length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Tổng claims</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {mainTabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+                {t.id === 'search' && <FiSearch className="text-xs" />}
+            {t.label}
+            {t.count !== null && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${tab === t.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}>
+                {t.count}
+              </span>
+            )}
+          </button>
+        ))}
+        <button onClick={loadAll} disabled={loading} className="ml-auto px-3 py-2 text-xs text-gray-400 hover:text-gray-600">
+          {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" /> : '↻ Tải lại'}
+        </button>
+      </div>
+
+      {/* Tab content */}
+      {(tab === 'pending' || tab === 'reviewed') && (
+        loading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+          </div>
+        ) : displayList.length === 0 ? (
+          <div className="card text-center py-12">
+            <FiDollarSign className="text-4xl text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-400">{tab === 'pending' ? 'Không có yêu cầu chờ xử lý' : 'Chưa xử lý yêu cầu nào'}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {displayList.map((claim, i) => (
+              <ClaimCard
+                key={i}
+                claim={claim}
+                canReview={tab === 'pending'}
+                reviewForm={reviewForm}
+                setReviewForm={setReviewForm}
+                onReview={handleReview}
+                loading={reviewLoading}
+              />
+            ))}
+          </div>
+        )
+      )}
+
+      {tab === 'search' && (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={searchPatient}
+              onChange={(e) => setSearchPatient(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearchPatient()}
+              className="input-field flex-1"
+              placeholder="Nhập Patient ID để tra cứu..."
+            />
+            <button onClick={handleSearchPatient} disabled={searching} className="btn-primary flex items-center gap-2">
+              {searching ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiSearch />}
+              Tìm
+            </button>
+          </div>
+          {searchResults.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500">{searchResults.length} yêu cầu của bệnh nhân <strong>{searchPatient}</strong></p>
+              {searchResults.map((claim, i) => (
+                <ClaimCard key={i} claim={claim} canReview={false} reviewForm={null} setReviewForm={() => {}} onReview={() => {}} loading={false} />
+              ))}
+            </div>
+          ) : (
+            <div className="card text-center py-10">
+              <FiSearch className="text-3xl text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-400 text-sm">Nhập Patient ID và nhấn Tìm</p>
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+// ============================================================
+// VIEW: Patient / Doctor
+// ============================================================
+function PatientView({ user }) {
+  const isPatient = user.role === 'patient'
   const [claims, setClaims] = useState([])
   const [loading, setLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [searchId, setSearchId] = useState(user.role === 'patient' ? user.userId : '')
-  const [form, setForm] = useState({ patientId: '', recordId: '', claimType: 'hospitalization', amount: '', description: '' })
-  const [reviewForm, setReviewForm] = useState(null)
+  const [searchId] = useState(isPatient ? user.userId : '')
+  const [form, setForm] = useState({
+    patientId: isPatient ? user.userId : '',
+    recordId: '', claimType: 'outpatient', amount: '', description: '',
+  })
+  const [records, setRecords] = useState([])
+  const [loadingRecords, setLoadingRecords] = useState(false)
+
+  useEffect(() => { if (isPatient) loadClaims() }, [])
+
+  useEffect(() => {
+    if (!form.patientId.trim()) { setRecords([]); return }
+    setLoadingRecords(true)
+    getAllRecordsByPatientId({ userId: user.userId, patientId: form.patientId })
+      .then(res => {
+        const raw = res.data?.data
+        setRecords(typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []))
+      })
+      .catch(() => setRecords([]))
+      .finally(() => setLoadingRecords(false))
+  }, [form.patientId])
 
   const loadClaims = async () => {
     if (!searchId.trim()) return
@@ -31,178 +743,144 @@ export default function InsuranceClaims() {
       const res = await getClaimsByPatient({ userId: user.userId, patientId: searchId })
       const raw = res.data.data
       setClaims(typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []))
-    } catch {
-      toast.error('Lỗi tải yêu cầu bảo hiểm')
-    } finally {
-      setLoading(false)
-    }
+    } catch { toast.error('Lỗi tải yêu cầu bảo hiểm') }
+    finally { setLoading(false) }
   }
 
   const handleCreate = async (e) => {
     e.preventDefault()
     setLoading(true)
     try {
-      const res = await createClaim({
-        userId: user.userId,
-        patientId: form.patientId,
-        recordId: form.recordId,
-        claimType: form.claimType,
-        amount: form.amount,
-        description: form.description,
-      })
+      const res = await createClaim({ userId: user.userId, ...form })
       if (res.data.success || res.data.data) {
         toast.success('Tạo yêu cầu bảo hiểm thành công!')
         setShowCreate(false)
-        setForm({ patientId: '', recordId: '', claimType: 'hospitalization', amount: '', description: '' })
-        if (searchId) loadClaims()
-      } else {
-        toast.error(res.data.error || 'Thất bại')
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Lỗi kết nối')
-    } finally {
-      setLoading(false)
-    }
+        setForm({ patientId: isPatient ? user.userId : '', recordId: '', claimType: 'outpatient', amount: '', description: '' })
+        loadClaims()
+      } else { toast.error(res.data.error || 'Thất bại') }
+    } catch (err) { toast.error(err.response?.data?.error || 'Lỗi kết nối') }
+    finally { setLoading(false) }
   }
 
-  const handleReview = async (action) => {
-    if (!reviewForm) return
-    setLoading(true)
-    try {
-      const fn = action === 'approve' ? approveClaim : rejectClaim
-      const res = await fn({
-        userId: user.userId,
-        patientId: reviewForm.patientId,
-        claimId: reviewForm.claimId,
-        reviewNotes: reviewForm.notes,
-      })
-      if (res.data.success || res.data.data) {
-        toast.success(action === 'approve' ? 'Đã duyệt!' : 'Đã từ chối!')
-        setReviewForm(null)
-        loadClaims()
-      } else {
-        toast.error(res.data.error || 'Thất bại')
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Lỗi')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const pending  = claims.filter(c => (c.Value || c).status === 'pending').length
+  const approved = claims.filter(c => (c.Value || c).status === 'approved').length
+  const rejected = claims.filter(c => (c.Value || c).status === 'rejected').length
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Bảo hiểm y tế</h1>
           <p className="text-gray-500 mt-1">Quản lý yêu cầu bồi thường bảo hiểm</p>
         </div>
-        {(user.role === 'patient' || user.role === 'doctor') && (
+        {(isPatient || user.role === 'doctor') && (
           <button onClick={() => setShowCreate(!showCreate)} className="btn-primary flex items-center gap-2">
             <FiPlus /> Tạo yêu cầu
           </button>
         )}
       </div>
 
-      {/* Create form */}
+      {claims.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Chờ duyệt', value: pending,  cls: 'bg-yellow-50 border-yellow-200', valCls: 'text-yellow-700' },
+            { label: 'Đã duyệt',  value: approved, cls: 'bg-green-50 border-green-200',   valCls: 'text-green-700' },
+            { label: 'Từ chối',   value: rejected, cls: 'bg-red-50 border-red-200',       valCls: 'text-red-700' },
+          ].map(s => (
+            <div key={s.label} className={`rounded-xl border p-4 ${s.cls}`}>
+              <p className={`text-2xl font-bold ${s.valCls}`}>{s.value}</p>
+              <p className="text-sm text-gray-500 mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {showCreate && (
         <div className="card max-w-xl">
           <h2 className="text-lg font-semibold mb-4">Tạo yêu cầu bảo hiểm</h2>
           <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            {!isPatient && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
-                <input type="text" value={form.patientId} onChange={(e) => setForm({ ...form, patientId: e.target.value })} className="input-field" required />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
+                <input type="text" value={form.patientId} onChange={(e) => setForm({ ...form, patientId: e.target.value, recordId: '' })} className="input-field" required />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Record ID</label>
-                <input type="text" value={form.recordId} onChange={(e) => setForm({ ...form, recordId: e.target.value })} className="input-field" required />
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hồ sơ bệnh án *</label>
+              <div className="relative">
+                <select value={form.recordId} onChange={(e) => setForm({ ...form, recordId: e.target.value })} className="input-field appearance-none pr-8" required disabled={!form.patientId || loadingRecords}>
+                  <option value="">{loadingRecords ? 'Đang tải...' : !form.patientId ? '-- Nhập Patient ID trước --' : records.length === 0 ? '-- Không có hồ sơ --' : '-- Chọn hồ sơ --'}</option>
+                  {records.map((r) => {
+                    const diag = (() => { try { return typeof r.diagnosis === 'string' ? JSON.parse(r.diagnosis) : r.diagnosis } catch { return null } })()
+                    const date = r.timestamp ? new Date(r.timestamp).toLocaleDateString('vi-VN') : ''
+                    const icd = diag?.primary?.icdCode || ''
+                    const desc = diag?.primary?.description || ''
+                    return <option key={r.recordId} value={r.recordId}>{date} — {icd}{desc ? ` · ${desc}` : ''}</option>
+                  })}
+                </select>
+                <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
+                  {loadingRecords ? <div className="w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" /> : <FiChevronDown />}
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Loại</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Loại yêu cầu</label>
                 <select value={form.claimType} onChange={(e) => setForm({ ...form, claimType: e.target.value })} className="input-field">
                   {claimTypes.map((t) => <option key={t} value={t}>{claimTypeLabels[t]}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Số tiền (VNĐ)</label>
-                <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input-field" required />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số tiền (VNĐ) *</label>
+                <input type="number" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input-field" placeholder="VD: 1500000" required />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
-              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input-field h-24" required />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả *</label>
+              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input-field h-20" placeholder="Mô tả lý do yêu cầu bồi thường..." required />
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={loading} className="btn-primary">Gửi yêu cầu</button>
+              <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+                {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                Gửi yêu cầu
+              </button>
               <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Hủy</button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Search */}
-      <div className="card">
-        <div className="flex gap-3">
-          <input type="text" value={searchId} onChange={(e) => setSearchId(e.target.value)} className="input-field flex-1" placeholder="Patient ID" onKeyDown={(e) => e.key === 'Enter' && loadClaims()} readOnly={user.role === 'patient'} />
-          <button onClick={loadClaims} disabled={loading} className="btn-primary flex items-center gap-2">
-            <FiSearch /> Tra cứu
-          </button>
+      {loading && claims.length === 0 ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
-      </div>
-
-      {/* Claims list */}
-      {claims.length > 0 && (
-        <div className="space-y-4">
-          {claims.map((claim, i) => {
-            const val = claim.Value || claim
-            return (
-              <div key={i} className="card">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <FiDollarSign className="text-yellow-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-gray-900">{claim.Key || val.claimId || `Claim #${i + 1}`}</h3>
-                      <span className={`badge ${statusColors[val.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {val.status === 'pending' ? 'Chờ duyệt' : val.status === 'approved' ? 'Đã duyệt' : val.status === 'rejected' ? 'Từ chối' : val.status || 'N/A'}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-sm text-gray-600 space-y-1">
-                      <p>Loại: <strong>{claimTypeLabels[val.claimType] || val.claimType}</strong></p>
-                      <p>Số tiền: <strong>{Number(val.amount).toLocaleString('vi-VN')} VNĐ</strong></p>
-                      <p>Mô tả: {val.description}</p>
-                    </div>
-
-                    {/* Insurance review */}
-                    {user.role === 'insurance' && val.status === 'pending' && (
-                      <div className="mt-3">
-                        {reviewForm?.claimId === (val.claimId || claim.Key) ? (
-                          <div className="space-y-2">
-                            <input type="text" value={reviewForm.notes} onChange={(e) => setReviewForm({ ...reviewForm, notes: e.target.value })} className="input-field" placeholder="Ghi chú xét duyệt..." />
-                            <div className="flex gap-2">
-                              <button onClick={() => handleReview('approve')} className="btn-success flex items-center gap-1 text-sm"><FiCheck /> Duyệt</button>
-                              <button onClick={() => handleReview('reject')} className="btn-danger flex items-center gap-1 text-sm"><FiX /> Từ chối</button>
-                              <button onClick={() => setReviewForm(null)} className="btn-secondary text-sm">Hủy</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button onClick={() => setReviewForm({ claimId: val.claimId || claim.Key, patientId: val.patientId || searchId, notes: '' })} className="btn-primary text-sm">
-                            Xét duyệt
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+      ) : claims.length === 0 ? (
+        <div className="card text-center py-12">
+          <FiDollarSign className="text-4xl text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-400">Chưa có yêu cầu bảo hiểm nào</p>
+          {isPatient && (
+            <button onClick={() => setShowCreate(true)} className="mt-4 btn-primary inline-flex items-center gap-2">
+              <FiPlus /> Tạo yêu cầu đầu tiên
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {claims.map((claim, i) => (
+            <ClaimCard key={i} claim={claim} canReview={false} reviewForm={null} setReviewForm={() => {}} onReview={() => {}} loading={false} />
+          ))}
         </div>
       )}
     </div>
   )
+}
+
+// ============================================================
+// Root — chọn view theo role
+// ============================================================
+export default function InsuranceClaims() {
+  const { user } = useAuth()
+  if (user.role === 'insuranceAdmin') return <InsuranceAdminView user={user} />
+  if (user.role === 'agent')          return <AgentView user={user} />
+  return <PatientView user={user} />
 }

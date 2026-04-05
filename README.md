@@ -15,38 +15,36 @@ A decentralized healthcare system for secure management of electronic health rec
 
 ## Architecture
 
+Toàn bộ project chạy trong **WSL (Ubuntu)**. Trình duyệt trên Windows truy cập qua `localhost`.
+
 ```
-┌─────────────────────────────────────────────────────┐
-│                    WSL / Linux                       │
-│                                                     │
-│  ┌───────────────────────────────────────────────┐  │
-│  │         Hyperledger Fabric Network            │  │
-│  │   Org1 (Hospital) ◄──────► Org2 (Insurance)  │  │
-│  │   Peer: port 7051            Peer: port 9051  │  │
-│  │   CouchDB: port 5984         CouchDB: 7984    │  │
-│  │   CA: port 7054              CA: port 8054    │  │
-│  │             Channel: mychannel                │  │
-│  │          Chaincode: ehrChainCode              │  │
-│  └───────────────────────────────────────────────┘  │
-│                        │ crypto/certs                │
-└────────────────────────┼────────────────────────────┘
-                         │ (copy to Windows)
-┌────────────────────────┼────────────────────────────┐
-│                   Windows Host                       │
-│                        │                            │
-│  ┌─────────────────────▼──────────────────────────┐ │
-│  │     Backend: Node.js + Express (port 5000)     │ │
-│  │     Fabric Network SDK → connects to WSL peers │ │
-│  └────────────────────────────────────────────────┘ │
-│                        │ REST API                    │
-│  ┌─────────────────────▼──────────────────────────┐ │
-│  │      Frontend: React + Vite (port 3000)        │ │
-│  └────────────────────────────────────────────────┘ │
-│                                                     │
-│  ┌────────────────────────────────────────────────┐ │
-│  │   Hyperledger Explorer (port 8080)  [optional] │ │
-│  └────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                     WSL / Ubuntu                          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │           Hyperledger Fabric Network               │  │
+│  │   Org1 (Hospital) ◄──────────► Org2 (Insurance)   │  │
+│  │   Peer: port 7051               Peer: port 9051    │  │
+│  │   CouchDB: port 5984            CouchDB: 7984      │  │
+│  │   CA: port 7054                 CA: port 8054      │  │
+│  │               Channel: mychannel                   │  │
+│  │            Chaincode: ehrChainCode                 │  │
+│  └──────────────────────┬─────────────────────────────┘  │
+│                         │ crypto/certs (local)            │
+│  ┌──────────────────────▼─────────────────────────────┐  │
+│  │        Backend: Node.js + Express (port 5000)      │  │
+│  │        Fabric Network SDK (đọc file trực tiếp)     │  │
+│  └──────────────────────┬─────────────────────────────┘  │
+│                         │ REST API                        │
+│  ┌──────────────────────▼─────────────────────────────┐  │
+│  │         Frontend: React + Vite (port 3000)         │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │     Hyperledger Explorer (port 8080) [optional]    │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+              ▲ truy cập từ Windows browser qua localhost
 ```
 
 ## Project Structure
@@ -80,31 +78,36 @@ EHR-Hyperledger-Fabric-Project/
 
 ## Prerequisites
 
+Tất cả cài trong **WSL (Ubuntu 22.04)**:
+
 - **Docker** & **Docker Compose**
 - **Node.js** 18+
 - **Git**
-- **OS:** Linux or Windows with WSL2 (Fabric network runs inside WSL; backend/frontend run on the Windows host)
+
+```bash
+# Cài Node.js 18 trong WSL
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
 
 ## Setup & Installation
 
-> **Note for Windows users:** Steps 1–3 run inside WSL. Steps 4–6 run on the Windows host. The crypto materials generated in WSL must be copied to Windows before starting the backend.
-
-### 1. Download Fabric Binaries (WSL)
+### 1. Download Fabric Binaries
 
 ```bash
 ./install-fabric.sh
 ```
 
-### 2. Start the Blockchain Network (WSL)
+### 2. Start the Blockchain Network
 
 ```bash
 cd fabric-samples/test-network
 
-# Create network with Certificate Authority and CouchDB
+# Khởi động network với Certificate Authority và CouchDB
 ./network.sh up createChannel -ca -s couchdb
 ```
 
-### 3. Deploy the EHR Chaincode (WSL)
+### 3. Deploy the EHR Chaincode
 
 ```bash
 ./network.sh deployCC -ccn ehrChainCode \
@@ -112,26 +115,17 @@ cd fabric-samples/test-network
   -ccl javascript
 ```
 
-### 4. Copy Crypto Materials to Windows
-
-After the network is up, copy the generated organization certificates from WSL to your Windows project directory so the Node.js SDK (running on Windows) can access them:
+### 4. Register Admins & Onboard Organizations
 
 ```bash
-# From WSL — copy the organizations folder to the server-node-sdk directory on Windows
-cp -r fabric-samples/test-network/organizations/ server-node-sdk/
-```
-
-### 5. Register Admins & Onboard Organizations (Windows)
-
-```bash
-cd server-node-sdk/
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/server-node-sdk/
 npm install
 
-# Register admins for both organizations
-node cert-script/registerOrg1Admin.js
-node cert-script/registerOrg2Admin.js
+# Đăng ký admin cho cả 2 org
+node cert-script/registerHospitalAdmin.js
+node cert-script/registerInsuranceAdmin.js
 
-# Onboard entities
+# Onboard các entity
 node cert-script/onboardHospital01.js
 node cert-script/onboardDoctor.js
 node cert-script/onboardPharmacy.js
@@ -139,27 +133,29 @@ node cert-script/onboardInsuranceCompany.js
 node cert-script/onboardInsuranceAgent.js
 ```
 
-### 6. Start the Backend Server (Windows)
+### 5. Start the Backend Server
 
 ```bash
-cd server-node-sdk/
-npm run dev    # Runs on http://localhost:5000
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/server-node-sdk/
+npm run dev    # http://localhost:5000
 ```
 
-### 7. Start the Frontend (Windows)
+### 6. Start the Frontend
 
 ```bash
-cd client/
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/client/
 npm install
-npm run dev    # Runs on http://localhost:3000
+npm run dev    # http://localhost:3000
 ```
 
-### 8. (Optional) Start Blockchain Explorer
+Truy cập từ Windows browser: **http://localhost:3000**
+
+### 7. (Optional) Start Blockchain Explorer
 
 ```bash
-cd fabric-explorer/
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-explorer/
 
-# Copy crypto materials from test-network
+# Copy crypto materials từ test-network
 cp -r ../fabric-samples/test-network/organizations/ .
 
 # Set environment variables
@@ -167,18 +163,18 @@ export EXPLORER_CONFIG_FILE_PATH=./config.json
 export EXPLORER_PROFILE_DIR_PATH=./connection-profile
 export FABRIC_CRYPTO_PATH=./organizations
 
-# Start Explorer
-docker-compose up -d    # Runs on http://localhost:8080
+# Khởi động Explorer
+docker-compose up -d    # http://localhost:8080
 ```
 
 ## Shutdown
 
 ```bash
-# Stop Fabric Explorer
-cd fabric-explorer/ && docker-compose down
+# Dừng Fabric Explorer
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-explorer/ && docker-compose down
 
-# Stop Fabric network (removes all containers and crypto materials)
-cd fabric-samples/test-network && ./network.sh down
+# Dừng Fabric network (xóa toàn bộ container và crypto)
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-samples/test-network && ./network.sh down
 ```
 
 ## Key Features
@@ -310,6 +306,212 @@ Base URL: `http://localhost:5000`
 |--------|----------|-------------|
 | POST | `/fetchLedger` | Fetch full ledger (admin only) |
 
+## FHIR R4 API
+
+Project hỗ trợ chuẩn **FHIR R4** (Fast Healthcare Interoperability Resources) — cho phép các hệ thống bên ngoài (HIS, phần mềm bảo hiểm, ứng dụng di động) đọc dữ liệu theo định dạng chuẩn quốc tế HL7.
+
+Base URL FHIR: `http://localhost:5000/fhir`
+
+> Tất cả FHIR endpoints dùng **GET**, response header `Content-Type: application/fhir+json`.
+
+### FHIR Endpoints
+
+| Method | Endpoint | FHIR Resource | Mô tả |
+|--------|----------|---------------|-------|
+| GET | `/fhir/metadata` | CapabilityStatement | Thông tin server FHIR |
+| GET | `/fhir/Patient/:patientId` | Patient | Thông tin bệnh nhân |
+| GET | `/fhir/Patient/:patientId/$everything` | Bundle | Toàn bộ dữ liệu bệnh nhân |
+| GET | `/fhir/Observation/:patientId/:recordId` | Observation | Chẩn đoán (ICD-10) |
+| GET | `/fhir/MedicationRequest/:patientId/:recordId` | MedicationRequest | Đơn thuốc (ATC) |
+| GET | `/fhir/Claim/:patientId/:claimId` | Claim | Yêu cầu bảo hiểm |
+| GET | `/fhir/Practitioner/:doctorId` | Practitioner | Thông tin bác sĩ |
+
+---
+
+### Ví dụ: Lấy thông tin bệnh nhân
+
+**Request:**
+```bash
+GET /fhir/Patient/P001?userId=hospitalAdmin
+```
+
+**Response:**
+```json
+{
+  "resourceType": "Patient",
+  "id": "P001",
+  "meta": { "lastUpdated": "2024-11-01T08:00:00.000Z" },
+  "identifier": [
+    { "system": "urn:ehr-blockchain:patient", "value": "P001" }
+  ],
+  "name": [{ "text": "Nguyen Van A" }],
+  "birthDate": "1990-05-15",
+  "address": [{ "city": "Ho Chi Minh" }]
+}
+```
+
+---
+
+### Ví dụ: Lấy chẩn đoán (Observation)
+
+**Request:**
+```bash
+GET /fhir/Observation/P001/R-abc123?userId=D001
+```
+
+**Response:**
+```json
+{
+  "resourceType": "Observation",
+  "id": "R-abc123",
+  "status": "final",
+  "code": {
+    "coding": [
+      {
+        "system": "http://hl7.org/fhir/sid/icd-10",
+        "code": "J11.1",
+        "display": "Influenza with other respiratory manifestations"
+      }
+    ]
+  },
+  "subject": { "reference": "Patient/P001" },
+  "performer": [{ "reference": "Practitioner/D001" }],
+  "effectiveDateTime": "2024-11-01T08:00:00.000Z"
+}
+```
+
+---
+
+### Ví dụ: Lấy đơn thuốc (MedicationRequest)
+
+**Request:**
+```bash
+GET /fhir/MedicationRequest/P001/R-abc123?userId=D001
+```
+
+**Response:**
+```json
+{
+  "resourceType": "MedicationRequest",
+  "id": "R-abc123-med-0",
+  "status": "active",
+  "intent": "order",
+  "subject": { "reference": "Patient/P001" },
+  "requester": { "reference": "Practitioner/D001" },
+  "medicationCodeableConcept": {
+    "coding": [
+      {
+        "system": "http://www.whocc.no/atc",
+        "code": "N02BE01",
+        "display": "Paracetamol"
+      }
+    ]
+  },
+  "dosageInstruction": [
+    {
+      "text": "500mg oral 3x/day",
+      "route": { "coding": [{ "display": "oral" }] },
+      "doseAndRate": [
+        { "doseQuantity": { "value": 500, "unit": "mg" } }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### Ví dụ: Bundle toàn bộ dữ liệu bệnh nhân (`$everything`)
+
+**Request:**
+```bash
+GET /fhir/Patient/P001/$everything?userId=hospitalAdmin
+```
+
+**Response:**
+```json
+{
+  "resourceType": "Bundle",
+  "type": "searchset",
+  "total": 4,
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:Patient/P001",
+      "resource": { "resourceType": "Patient", "id": "P001", "..." }
+    },
+    {
+      "fullUrl": "urn:uuid:Observation/R-abc123",
+      "resource": { "resourceType": "Observation", "id": "R-abc123", "..." }
+    },
+    {
+      "fullUrl": "urn:uuid:MedicationRequest/R-abc123-med-0",
+      "resource": { "resourceType": "MedicationRequest", "id": "R-abc123-med-0", "..." }
+    }
+  ]
+}
+```
+
+---
+
+### Ví dụ: Yêu cầu bảo hiểm (Claim)
+
+**Request:**
+```bash
+GET /fhir/Claim/P001/CLM-001?userId=insuranceAgent-Rama
+```
+
+**Response:**
+```json
+{
+  "resourceType": "Claim",
+  "id": "CLM-001",
+  "status": "active",
+  "type": {
+    "coding": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/claim-type",
+        "code": "professional",
+        "display": "outpatient"
+      }
+    ]
+  },
+  "patient": { "reference": "Patient/P001" },
+  "created": "2024-11-02T10:00:00.000Z",
+  "total": { "value": 1500000, "currency": "VND" }
+}
+```
+
+---
+
+### Ví dụ: CapabilityStatement
+
+**Request:**
+```bash
+GET /fhir/metadata
+```
+
+**Response (tóm tắt):**
+```json
+{
+  "resourceType": "CapabilityStatement",
+  "status": "active",
+  "fhirVersion": "4.0.1",
+  "format": ["json"],
+  "rest": [{
+    "mode": "server",
+    "resource": [
+      { "type": "Patient", "interaction": [{ "code": "read" }] },
+      { "type": "Observation", "interaction": [{ "code": "read" }] },
+      { "type": "MedicationRequest", "interaction": [{ "code": "read" }] },
+      { "type": "Claim", "interaction": [{ "code": "read" }] },
+      { "type": "Practitioner", "interaction": [{ "code": "read" }] }
+    ]
+  }]
+}
+```
+
+---
+
 ## Data Validation Standards
 
 - **ICD-10** codes for diagnosis (format: A00 – Z99.9)
@@ -319,20 +521,23 @@ Base URL: `http://localhost:5000`
 
 ## Troubleshooting
 
-**Backend cannot connect to Fabric peers**
-- Ensure the Fabric network is running in WSL (`./network.sh up ...`).
-- Verify that the `organizations/` crypto folder was copied from WSL to the `server-node-sdk/` directory on Windows after the network started.
-- Check that peer hostnames in the connection profile resolve correctly from Windows (may need `/etc/hosts` entries pointing to the WSL IP).
+**Backend không kết nối được Fabric peers**
+- Kiểm tra Fabric network đang chạy: `docker ps` trong WSL.
+- Sau mỗi lần `./network.sh down` + `up`, phải chạy lại `registerOrg1Admin.js` / `registerOrg2Admin.js` vì crypto materials mới được tạo lại.
 
-**`wallet/` identity errors on backend startup**
-- Re-run the `registerOrg1Admin.js` / `registerOrg2Admin.js` scripts after any `./network.sh down` + `up` cycle, because new crypto materials are generated each time.
+**Lỗi `wallet/` khi khởi động backend**
+- Xóa thư mục `server-node-sdk/wallet/` và chạy lại các script đăng ký admin.
 
-**Frontend shows blank page or API errors**
-- Confirm the backend is running on port 5000.
-- The Vite dev server proxies `/api` requests to `http://localhost:5000`; ensure there are no CORS errors in the browser console.
+**Frontend trắng hoặc lỗi API**
+- Kiểm tra backend đang chạy trên port 5000.
+- Vite proxy `/api` → `http://localhost:5000`; kiểm tra console browser nếu có lỗi CORS.
 
 **Chaincode endorsement failures**
-- Confirm the chaincode was deployed to **both** Org1 and Org2 peers before invoking transactions.
+- Đảm bảo chaincode đã được deploy lên **cả 2** peer của Org1 và Org2.
+
+**Không truy cập được từ Windows browser**
+- WSL2 tự động forward port — truy cập `http://localhost:3000` từ Windows là đủ.
+- Nếu không được, kiểm tra `wsl hostname -I` để lấy WSL IP và truy cập trực tiếp.
 
 ## License
 

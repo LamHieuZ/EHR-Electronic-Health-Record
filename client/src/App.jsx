@@ -30,7 +30,7 @@ export default function App() {
       case 'doctor': return '/doctor'
       case 'admin': case 'hospital': return '/admin/ledger'
       case 'pharmacy': return '/prescriptions'
-      case 'insurance': return '/insurance'
+      case 'insuranceAdmin': case 'agent': return '/insurance'
       case 'researcher': return '/research'
       default: return '/dashboard'
     }
@@ -42,7 +42,7 @@ export default function App() {
       <Route path="/register" element={user ? <Navigate to={getHomeRedirect()} /> : <Register />} />
 
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route path="/dashboard" element={<PatientDashboard />} />
+        <Route path="/dashboard" element={<ProtectedRoute roles={['patient']}><PatientDashboard /></ProtectedRoute>} />
         <Route path="/doctor" element={<ProtectedRoute roles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />
         <Route path="/records" element={<PatientRecords />} />
         <Route path="/access" element={<ProtectedRoute roles={['patient']}><AccessControl /></ProtectedRoute>} />

@@ -33,6 +33,7 @@ export const getClaim = (data) => api.post('/getClaim', data)
 export const getClaimsByPatient = (data) => api.post('/getClaimsByPatient', data)
 export const approveClaim = (data) => api.post('/approveClaim', data)
 export const rejectClaim = (data) => api.post('/rejectClaim', data)
+export const getAllClaims = (data) => api.post('/getAllClaims', data)
 
 // Research
 export const onboardResearcher = (data) => api.post('/onboardResearcher', data)
@@ -51,6 +52,7 @@ export const getRewardsByPatient = (data) => api.post('/getRewardsByPatient', da
 
 // Admin
 export const fetchLedger = (data) => api.post('/fetchLedger', data)
+export const fetchInsuranceLedger = (data) => api.post('/fetchInsuranceLedger', data)
 
 // Multi-org management
 export const onboardHospital = (data) => api.post('/onboardHospital', data)
@@ -62,5 +64,6 @@ export const getAllHospitals = (data) => api.post('/getAllHospitals', data)
 export const getAllDoctors = (data) => api.post('/getAllDoctors', data)
 export const getAllPharmacies = (data) => api.post('/getAllPharmacies', data)
 export const getAllInsuranceCompanies = (data) => api.post('/getAllInsuranceCompanies', data)
+export const getAllAgents = (data) => api.post('/getAllAgents', data)
 
 export default api

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { addRecord, updateRecord, getAllRecordsByPatientId, getRecordById, getMyPatients } from '../services/api'
+import { addRecord, updateRecord, getAllRecordsByPatientId, getMyPatients } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiPlus, FiSearch, FiEdit, FiFileText, FiTrash2, FiUser } from 'react-icons/fi'
+import { FiPlus, FiSearch, FiEdit, FiFileText, FiTrash2, FiUser, FiChevronDown, FiCalendar, FiActivity, FiPackage, FiClock } from 'react-icons/fi'
 
 const emptyMed = { code: '', name: '', strength: '', unit: 'mg', quantity: '1', frequency: '', route: 'oral', timing: '', duration: '', durationUnit: 'days' }
 
@@ -294,7 +294,8 @@ export default function DoctorDashboard() {
     notes: '',
     medications: [{ ...emptyMed }],
   })
-  const [loadingRecord, setLoadingRecord] = useState(false)
+  const [patientRecords, setPatientRecords] = useState([])
+  const [loadingPatientRecords, setLoadingPatientRecords] = useState(false)
   const debounceRef = useRef(null)
 
   useEffect(() => {
@@ -303,43 +304,60 @@ export default function DoctorDashboard() {
       .catch(() => {})
   }, [])
 
+  // Khi đổi patientId → tự load danh sách records để chọn
   useEffect(() => {
-    if (!updateForm.patientId.trim() || !updateForm.recordId.trim()) return
+    if (!updateForm.patientId.trim()) {
+      setPatientRecords([])
+      setUpdateForm(prev => ({ ...prev, recordId: '', diagCode: '', diagDesc: '', notes: '', medications: [{ ...emptyMed }] }))
+      return
+    }
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
-      setLoadingRecord(true)
+      setLoadingPatientRecords(true)
       try {
-        const res = await getRecordById({ userId: user.userId, patientId: updateForm.patientId, recordId: updateForm.recordId })
-        const record = res.data?.data
-        if (!record) return
-        const diag = typeof record.diagnosis === 'string' ? JSON.parse(record.diagnosis) : record.diagnosis
-        const pres = typeof record.prescription === 'string' ? JSON.parse(record.prescription) : record.prescription
-        setUpdateForm(prev => ({
-          ...prev,
-          diagCode: diag?.primary?.icdCode || '',
-          diagDesc: diag?.primary?.description || '',
-          notes: diag?.notes || '',
-          medications: pres?.medications?.map(m => ({
-            code: m.drugCode || '',
-            name: m.drugName || '',
-            strength: String(m.strength || ''),
-            unit: m.unit || 'mg',
-            quantity: String(m.dosage?.quantity || '1'),
-            frequency: String(m.dosage?.frequency || ''),
-            route: m.dosage?.route || 'oral',
-            timing: m.dosage?.timing || '',
-            duration: m.dosage?.duration ? String(m.dosage.duration) : '',
-            durationUnit: m.dosage?.durationUnit || 'days',
-          })) || [{ ...emptyMed }],
-        }))
-        toast.success('Đã tải hồ sơ')
+        const res = await getAllRecordsByPatientId({ userId: user.userId, patientId: updateForm.patientId })
+        const raw = res.data?.data
+        const data = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || [])
+        setPatientRecords(data)
+        if (data.length === 0) toast.info('Bệnh nhân chưa có hồ sơ nào')
       } catch {
-        // record not found, ignore
+        setPatientRecords([])
       } finally {
-        setLoadingRecord(false)
+        setLoadingPatientRecords(false)
       }
-    }, 600)
-  }, [updateForm.patientId, updateForm.recordId])
+    }, 500)
+  }, [updateForm.patientId])
+
+  // Khi chọn record từ dropdown → điền sẵn toàn bộ form
+  const handleSelectRecord = (recordId) => {
+    if (!recordId) {
+      setUpdateForm(prev => ({ ...prev, recordId: '', diagCode: '', diagDesc: '', notes: '', medications: [{ ...emptyMed }] }))
+      return
+    }
+    const record = patientRecords.find(r => r.recordId === recordId)
+    if (!record) return
+    const diag = typeof record.diagnosis === 'string' ? JSON.parse(record.diagnosis) : record.diagnosis
+    const pres = typeof record.prescription === 'string' ? JSON.parse(record.prescription) : record.prescription
+    setUpdateForm(prev => ({
+      ...prev,
+      recordId: record.recordId,
+      diagCode: diag?.primary?.icdCode || '',
+      diagDesc: diag?.primary?.description || '',
+      notes: diag?.notes || '',
+      medications: pres?.medications?.map(m => ({
+        code: m.drugCode || '',
+        name: m.drugName || '',
+        strength: String(m.strength || ''),
+        unit: m.unit || 'mg',
+        quantity: String(m.dosage?.quantity || '1'),
+        frequency: String(m.dosage?.frequency || ''),
+        route: m.dosage?.route || 'oral',
+        timing: m.dosage?.timing || '',
+        duration: m.dosage?.duration ? String(m.dosage.duration) : '',
+        durationUnit: m.dosage?.durationUnit || 'days',
+      })) || [{ ...emptyMed }],
+    }))
+  }
 
   // Build JSON from form fields
   const buildDiagnosis = (form) =>
@@ -456,6 +474,7 @@ export default function DoctorDashboard() {
           notes: '',
           medications: [{ ...emptyMed }],
         })
+        setPatientRecords([])
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
@@ -542,32 +561,65 @@ export default function DoctorDashboard() {
         <div className="card max-w-2xl">
           <h2 className="text-lg font-semibold mb-4">Cập nhật bệnh án</h2>
           <form onSubmit={handleUpdateRecord} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
                 <PatientIdInput value={updateForm.patientId} onChange={(v) => setUpdateForm({ ...updateForm, patientId: v })} patients={myPatients} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Record ID *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chọn hồ sơ *</label>
                 <div className="relative">
-                  <input type="text" value={updateForm.recordId} onChange={(e) => setUpdateForm({ ...updateForm, recordId: e.target.value })} className="input-field pr-8" required />
-                  {loadingRecord && (
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
-                  )}
+                  <select
+                    value={updateForm.recordId}
+                    onChange={(e) => handleSelectRecord(e.target.value)}
+                    className="input-field appearance-none pr-8"
+                    required
+                    disabled={!updateForm.patientId || loadingPatientRecords}
+                  >
+                    <option value="">
+                      {loadingPatientRecords
+                        ? 'Đang tải...'
+                        : !updateForm.patientId
+                        ? '-- Chọn bệnh nhân trước --'
+                        : patientRecords.length === 0
+                        ? '-- Không có hồ sơ --'
+                        : '-- Chọn hồ sơ --'}
+                    </option>
+                    {patientRecords.map((r) => {
+                      const diag = typeof r.diagnosis === 'string' ? JSON.parse(r.diagnosis) : r.diagnosis
+                      const date = r.timestamp ? new Date(r.timestamp).toLocaleDateString('vi-VN') : ''
+                      const icd = diag?.primary?.icdCode || ''
+                      const desc = diag?.primary?.description || ''
+                      return (
+                        <option key={r.recordId} value={r.recordId}>
+                          {date} — {icd}{desc ? ` · ${desc}` : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
+                    {loadingPatientRecords
+                      ? <div className="w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
+                      : <FiChevronDown />}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <hr className="border-gray-200" />
-            <DiagnosisFields form={updateForm} setForm={setUpdateForm} />
+            {updateForm.recordId && (
+              <>
+                <hr className="border-gray-200" />
+                <DiagnosisFields form={updateForm} setForm={setUpdateForm} />
 
-            <hr className="border-gray-200" />
-            <MedicationFields medications={updateForm.medications} formType="update" onAdd={addMed} onRemove={removeMed} onUpdate={updateMed} />
+                <hr className="border-gray-200" />
+                <MedicationFields medications={updateForm.medications} formType="update" onAdd={addMed} onRemove={removeMed} onUpdate={updateMed} />
 
-            <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
-              {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiEdit />}
-              Cập nhật
-            </button>
+                <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+                  {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiEdit />}
+                  Cập nhật
+                </button>
+              </>
+            )}
           </form>
         </div>
       )}
@@ -578,30 +630,117 @@ export default function DoctorDashboard() {
           <div className="card max-w-2xl">
             <h2 className="text-lg font-semibold mb-4">Tra cứu hồ sơ bệnh nhân</h2>
             <div className="flex gap-3">
-              <input type="text" value={searchId} onChange={(e) => setSearchId(e.target.value)} className="input-field flex-1" placeholder="Nhập Patient ID" onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
-              <button onClick={handleSearch} disabled={loading} className="btn-primary flex items-center gap-2">
-                <FiSearch /> Tìm
+              <PatientIdInput
+                value={searchId}
+                onChange={setSearchId}
+                patients={myPatients}
+                placeholder="Nhập Patient ID"
+              />
+              <button onClick={handleSearch} disabled={loading} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                {loading
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <FiSearch />}
+                Tìm
               </button>
             </div>
           </div>
 
           {records.length > 0 && (
-            <div className="space-y-3">
-              {records.map((record, i) => (
-                <div key={i} className="card">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FiFileText className="text-primary-600" />
+            <div className="space-y-3 max-w-2xl">
+              <p className="text-sm text-gray-500">{records.length} hồ sơ tìm thấy</p>
+              {records.map((r, i) => {
+                const record = r.Value || r
+                const diag = (() => { try { return typeof record.diagnosis === 'string' ? JSON.parse(record.diagnosis) : record.diagnosis } catch { return null } })()
+                const pres = (() => { try { return typeof record.prescription === 'string' ? JSON.parse(record.prescription) : record.prescription } catch { return null } })()
+                const date = record.timestamp ? new Date(record.timestamp).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null
+                const time = record.timestamp ? new Date(record.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : null
+                const meds = pres?.medications || []
+
+                return (
+                  <div key={i} className="card space-y-4">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FiFileText className="text-primary-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 text-sm">
+                            {diag?.primary?.icdCode
+                              ? <span className="inline-flex items-center gap-1"><span className="bg-blue-100 text-blue-700 text-xs font-mono px-1.5 py-0.5 rounded">{diag.primary.icdCode}</span> {diag.primary.description}</span>
+                              : 'Không có chẩn đoán'}
+                          </p>
+                          <p className="text-xs text-gray-400 font-mono mt-0.5">{record.recordId || r.Key}</p>
+                        </div>
+                      </div>
+                      {date && (
+                        <div className="flex items-center gap-1 text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                          <FiCalendar className="text-xs" /> {date}
+                          {time && <><FiClock className="text-xs ml-1" /> {time}</>}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">Record: {record.Key || 'N/A'}</p>
-                      <pre className="text-sm text-gray-600 mt-2 bg-gray-50 p-3 rounded-lg overflow-x-auto">
-                        {JSON.stringify(record.Value || record, null, 2)}
-                      </pre>
+
+                    {/* Diagnosis notes */}
+                    {diag?.notes && (
+                      <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border-l-4 border-blue-200">
+                        {diag.notes}
+                      </p>
+                    )}
+
+                    {/* Secondary diagnoses */}
+                    {diag?.secondary?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-xs text-gray-500 self-center">Chẩn đoán phụ:</span>
+                        {diag.secondary.map((s, si) => (
+                          <span key={si} className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded">
+                            <span className="font-mono">{s.icdCode}</span> {s.description}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Medications */}
+                    {meds.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                          <FiPackage className="text-xs" /> Đơn thuốc ({meds.length})
+                        </div>
+                        <div className="space-y-2">
+                          {meds.map((med, mi) => (
+                            <div key={mi} className="flex items-start gap-3 bg-gray-50 rounded-lg px-3 py-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium text-gray-800 text-sm">{med.drugName}</span>
+                                  <span className="text-xs text-gray-500">{med.strength}{med.unit}</span>
+                                  {med.drugCode && <span className="font-mono text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{med.drugCode}</span>}
+                                </div>
+                                <div className="flex items-center gap-3 mt-1 text-xs text-gray-400 flex-wrap">
+                                  {med.dosage?.quantity && <span>{med.dosage.quantity} viên/lần</span>}
+                                  {med.dosage?.frequency && <span>{med.dosage.frequency} lần/ngày</span>}
+                                  {med.dosage?.route && <span>{med.dosage.route}</span>}
+                                  {med.dosage?.timing && <span>{timingOptions.find(t => t.value === med.dosage.timing)?.label || med.dosage.timing}</span>}
+                                  {med.dosage?.duration && <span>{med.dosage.duration} {med.dosage.durationUnit === 'weeks' ? 'tuần' : med.dosage.durationUnit === 'months' ? 'tháng' : 'ngày'}</span>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Footer */}
+                    <div className="flex items-center gap-4 text-xs text-gray-400 pt-1 border-t border-gray-100">
+                      {record.doctorId && <span className="flex items-center gap-1"><FiUser className="text-xs" /> {record.doctorId}</span>}
+                      {record.hospitalId && <span className="flex items-center gap-1"><FiActivity className="text-xs" /> {record.hospitalId}</span>}
+                      {record.version && <span>v{record.version}</span>}
+                      {record.updatedAt && record.updatedAt !== record.timestamp && (
+                        <span>Cập nhật: {new Date(record.updatedAt).toLocaleDateString('vi-VN')}</span>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

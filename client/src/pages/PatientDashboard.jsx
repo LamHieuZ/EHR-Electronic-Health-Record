@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getAllRecordsByPatientId, getPrescriptionsByPatient, getClaimsByPatient, getRewardsByPatient, getPatientById } from '../services/api'
-import { FiFileText, FiActivity, FiDollarSign, FiGift, FiClock, FiUser, FiShield } from 'react-icons/fi'
+import { FiFileText, FiActivity, FiDollarSign, FiGift, FiClock, FiUser, FiShield, FiPackage, FiCheckCircle } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 
 export default function PatientDashboard() {
@@ -136,25 +136,57 @@ export default function PatientDashboard() {
           <p className="text-gray-400 text-center py-8">Chưa có hồ sơ bệnh án nào</p>
         ) : (
           <div className="space-y-3">
-            {recentRecords.map((record, i) => (
-              <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-gray-50">
-                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
-                  <FiFileText className="text-primary-600" />
+            {recentRecords.map((record, i) => {
+              const r = record.Value || record
+              const diag = (() => { try { return typeof r.diagnosis === 'string' ? JSON.parse(r.diagnosis) : r.diagnosis } catch { return null } })()
+              const pres = (() => { try { return typeof r.prescription === 'string' ? JSON.parse(r.prescription) : r.prescription } catch { return null } })()
+              const icdCode = diag?.primary?.icdCode
+              const icdDesc = diag?.primary?.description
+              const medCount = pres?.medications?.length || 0
+              const date = r.timestamp ? new Date(r.timestamp).toLocaleDateString('vi-VN') : null
+
+              return (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <FiFileText className="text-primary-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {icdCode && (
+                        <span className="text-xs font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                          {icdCode}
+                        </span>
+                      )}
+                      <span className="text-sm font-medium text-gray-900 truncate">
+                        {icdDesc || 'Không có chẩn đoán'}
+                      </span>
+                      {r.dispensed && (
+                        <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                          <FiCheckCircle className="text-xs" /> Đã cấp thuốc
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-400 flex-wrap">
+                      {r.doctorId && (
+                        <span className="flex items-center gap-1">
+                          <FiUser className="text-xs" /> {r.doctorId}
+                        </span>
+                      )}
+                      {medCount > 0 && (
+                        <span className="flex items-center gap-1">
+                          <FiPackage className="text-xs" /> {medCount} thuốc
+                        </span>
+                      )}
+                      {date && (
+                        <span className="flex items-center gap-1">
+                          <FiClock className="text-xs" /> {date}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {record.Value?.diagnosis?.code || record.Value?.diagnosis || 'N/A'}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Bác sĩ: {record.Value?.doctorId || 'N/A'}
-                  </p>
-                </div>
-                <div className="text-xs text-gray-400 flex items-center gap-1">
-                  <FiClock />
-                  {record.Value?.createdAt ? new Date(record.Value.createdAt).toLocaleDateString('vi-VN') : 'N/A'}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

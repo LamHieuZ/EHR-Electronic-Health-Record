@@ -226,6 +226,14 @@ app.post('/getAllInsuranceCompanies', async function (req, res, next) {
     } catch (error) { next(error); }
 });
 
+app.post('/getAllAgents', async function (req, res, next) {
+    try {
+        const { userId } = req.body;
+        const result = await query.getQuery('getAllAgents', {}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) { next(error); }
+});
+
 app.post('/loginPatient', async function (req, res, next){
     try {
         let userId;
@@ -385,6 +393,31 @@ app.post('/fetchLedger', async function (req, res, next){
     }
 });
 
+// Insurance admin (Org2) xem ledger claims
+app.post('/fetchInsuranceLedger', async function (req, res, next){
+    try {
+        const { userId } = req.body;
+        const patients = await query.getQuery('getAllPatients', {}, userId);
+        const patientList = Array.isArray(patients) ? patients : [];
+        const results = await Promise.allSettled(
+            patientList.map(p =>
+                query.getQuery('getClaimsByPatient', { patientId: p.patientId }, userId)
+                    .then(claims => {
+                        const arr = Array.isArray(claims) ? claims :
+                            (typeof claims === 'string' ? JSON.parse(claims || '[]') : []);
+                        return arr.map(c => ({ ...c, patientName: p.name || '' }));
+                    })
+                    .catch(() => [])
+            )
+        );
+        const allClaims = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+        allClaims.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        res.status(200).send({ success: true, data: allClaims });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // ===========================================================================================
 // REVOKE ACCESS - Benh nhan thu hoi quyen bac si
 // ===========================================================================================
@@ -493,6 +526,34 @@ app.post('/rejectClaim', async function (req, res, next){
         const {userId, patientId, claimId, reviewNotes} = req.body;
         const result = await invoke.invokeTransaction('rejectClaim', {patientId, claimId, reviewNotes}, userId);
         res.status(200).send({ success: true, data: result});
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Lay tat ca claim cua toan bo benh nhan (insurance company/agent)
+app.post('/getAllClaims', async function (req, res, next){
+    try {
+        const { userId } = req.body;
+        const patients = await query.getQuery('getAllPatients', {}, userId);
+        const patientList = Array.isArray(patients) ? patients : [];
+
+        const results = await Promise.allSettled(
+            patientList.map(p =>
+                query.getQuery('getClaimsByPatient', { patientId: p.patientId }, userId)
+                    .then(claims => {
+                        const arr = Array.isArray(claims) ? claims :
+                            (typeof claims === 'string' ? JSON.parse(claims || '[]') : []);
+                        return arr.map(c => ({ ...c, patientName: p.name || '' }));
+                    })
+                    .catch(() => [])
+            )
+        );
+
+        const allClaims = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+        // Sort by timestamp descending
+        allClaims.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        res.status(200).send({ success: true, data: allClaims });
     } catch (error) {
         next(error);
     }
