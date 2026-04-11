@@ -40,7 +40,7 @@ async function main() {
             attrs: [
                 { name: 'role', value: 'pharmacy', ecert: true },
                 { name: 'uuid', value: 'Pharmacy01', ecert: true },
-                { name: 'hospitalId', value: 'Hospital01', ecert: true }
+                { name: 'hospitalId', value: 'hospitalAdmin', ecert: true }
             ],
         }, adminUser);
         const enrollment = await ca.enroll({
@@ -65,7 +65,7 @@ async function main() {
 
         // Ghi nha thuoc len blockchain
         const gateway = new Gateway();
-        await gateway.connect(ccp, { wallet, identity: 'Hospital01', discovery: { enabled: true, asLocalhost: true } });
+        await gateway.connect(ccp, { wallet, identity: 'hospitalAdmin', discovery: { enabled: true, asLocalhost: true } });
         const network = await gateway.getNetwork('mychannel');
         const contract = network.getContract('ehrChainCode');
 

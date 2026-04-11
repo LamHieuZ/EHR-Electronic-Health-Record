@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { FiHome, FiFileText, FiShield, FiActivity, FiDollarSign, FiDatabase, FiGift, FiAlertTriangle, FiLogOut, FiMenu, FiX, FiUsers } from 'react-icons/fi'
+import { FiHome, FiFileText, FiShield, FiActivity, FiDollarSign, FiDatabase, FiAlertTriangle, FiLogOut, FiMenu, FiSearch, FiUsers } from 'react-icons/fi'
 import { useState, useEffect } from 'react'
 
 const roleLabels = {
@@ -12,7 +12,6 @@ const roleLabels = {
   insuranceAdmin: 'Công ty bảo hiểm',
   insurance: 'Công ty bảo hiểm',
   agent: 'Chi nhánh bảo hiểm',
-  researcher: 'Nghiên cứu',
 }
 
 export default function Layout() {
@@ -68,6 +67,7 @@ export default function Layout() {
               <NavLink
                 key={to}
                 to={to}
+                end
                 onClick={() => setSidebarOpen(false)}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -88,11 +88,11 @@ export default function Layout() {
             <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 bg-primary-100 rounded-full flex items-center justify-center">
                 <span className="text-primary-700 font-semibold text-sm">
-                  {(user?.userId || user?.username || '?')[0].toUpperCase()}
+                  {(user?.name || user?.userId || '?')[0].toUpperCase()}
                 </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{user?.userId || user?.username}</p>
+                <p className="text-sm font-medium text-gray-900 truncate">{user?.name || user?.userId}</p>
                 <p className="text-xs text-gray-500">{roleLabels[user?.role] || user?.role}</p>
               </div>
             </div>
@@ -148,25 +148,22 @@ function getNavItems(user) {
     items.push({ to: '/access', icon: FiShield, label: 'Quyền truy cập' })
     items.push({ to: '/prescriptions', icon: FiActivity, label: 'Đơn thuốc' })
     items.push({ to: '/insurance', icon: FiDollarSign, label: 'Bảo hiểm' })
-    items.push({ to: '/research', icon: FiUsers, label: 'Nghiên cứu' })
-    items.push({ to: '/rewards', icon: FiGift, label: 'Phần thưởng' })
     items.push({ to: '/emergency', icon: FiAlertTriangle, label: 'Nhật ký khẩn cấp' })
   } else if (role === 'pharmacy') {
     items.push({ to: '/prescriptions', icon: FiActivity, label: 'Đơn thuốc' })
   } else if (role === 'insuranceAdmin' || role === 'insurance') {
-    items.push({ to: '/insurance', icon: FiUsers, label: 'Chi nhánh' })
-    items.push({ to: '/insurance', icon: FiDatabase, label: 'Sổ cái Blockchain' })
+    items.push({ to: '/insurance/agents', icon: FiUsers, label: 'Chi nhánh' })
+    items.push({ to: '/insurance/blockchain', icon: FiDatabase, label: 'Sổ cái Blockchain' })
   } else if (role === 'agent') {
-    items.push({ to: '/insurance', icon: FiDollarSign, label: 'Yêu cầu bảo hiểm' })
-  } else if (role === 'researcher') {
-    items.push({ to: '/research', icon: FiUsers, label: 'Nghiên cứu' })
+    items.push({ to: '/insurance/pending', icon: FiDollarSign, label: 'Chờ xử lý' })
+    items.push({ to: '/insurance/reviewed', icon: FiFileText, label: 'Đã xử lý' })
+    items.push({ to: '/insurance/search', icon: FiSearch, label: 'Tra cứu' })
   } else if (role === 'admin' || role === 'hospital') {
-    if (userId === 'hospitalAdmin') {
-      items.push({ to: '/admin/ledger', icon: FiUsers, label: 'Bệnh viện & Bác sĩ' })
-      items.push({ to: '/admin/ledger', icon: FiGift, label: 'Phần thưởng' })
+    if (['hospitalAdmin', 'hospital3Admin'].includes(userId)) {
+      items.push({ to: '/admin/doctors', icon: FiActivity, label: 'Bác sĩ' })
       items.push({ to: '/admin/ledger', icon: FiDatabase, label: 'Sổ cái Blockchain' })
     } else {
-      items.push({ to: '/admin/ledger', icon: FiShield, label: 'Bệnh viện' })
+      items.push({ to: '/admin/doctors', icon: FiShield, label: 'Bệnh viện' })
     }
   }
 

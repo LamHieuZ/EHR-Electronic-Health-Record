@@ -14,9 +14,8 @@ class ehrChainCode extends Contract {
     //   3. Practicing physician/Doctor - Read/Write (Patient data w.r.t to hospital)
     //   4. Diagnostics center - Read/Write (Patient records w.r.t to diagnostics center)
     //   5. Pharmacies - Read/Write (Patient prescriptions w.r.t to pharma center)
-    //   6. Researchers / R&D - Read data of hospital content, patient based on consent
-    //   7. Insurance companies - Read/Write (Patient claims)
-    //   8. Patient - Read/Write (All generated patient data)
+    //   6. Insurance companies - Read/Write (Patient claims)
+    //   7. Patient - Read/Write (All generated patient data)
     // ===========================================================================================
 
     // ===========================================================================================
@@ -32,8 +31,7 @@ class ehrChainCode extends Contract {
     //
     // patient-{patientId}: {
     //     patientId, name, dob, city,
-    //     authorizedDoctors: ["D001", "D002"],
-    //     consentRequests: [{ requestId, researcherId, purpose, status, timestamp }]
+    //     authorizedDoctors: ["D001", "D002"]
     // }
     //
     // record (composite key: record/{patientId}/{recordId}): {
@@ -49,8 +47,6 @@ class ehrChainCode extends Contract {
     //     status: "pending" | "approved" | "rejected",
     //     reviewedBy, reviewNotes, timestamp, updatedAt
     // }
-    //
-    // researcher-{researcherId}: { researcherId, name, institution, field, timestamp }
     //
     // emergency-log (composite key: emergency/{patientId}/{logId}): {
     //     logId, patientId, accessedBy, reason, timestamp
@@ -85,6 +81,11 @@ class ehrChainCode extends Contract {
     // Lay timestamp chuan ISO tu transaction
     getTimestamp(ctx) {
         return new Date(ctx.stub.getTxTimestamp().seconds.low * 1000).toISOString();
+    }
+
+    // Danh sach MSP cua cac to chuc benh vien (Org1, Org3, ...)
+    getHospitalMSPs() {
+        return ['Org1MSP', 'Org3MSP'];
     }
 
     // ===========================================================================================
@@ -224,14 +225,14 @@ class ehrChainCode extends Contract {
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(hospital)));
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(hospital))));
         return JSON.stringify({ message: `Hospital ${hospitalId} registered`, data: hospital });
     }
 
     // Dang ky bac si vao ledger - chi hospital moi co quyen
     // Bac si se thuoc ve hospitalId cua nguoi tao
     async onboardDoctor(ctx, args) {
-        const { doctorId, name, city } = JSON.parse(args);
+        const { doctorId, name, city, dob, department, position, specialization, phone } = JSON.parse(args);
         const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
 
         if (role !== 'hospital') {
@@ -248,11 +249,16 @@ class ehrChainCode extends Contract {
             doctorId,
             hospitalId: hospitalId || callerId,
             name, city,
+            dob: dob || '',
+            department: department || '',
+            position: position || '',
+            specialization: specialization || '',
+            phone: phone || '',
             createdBy: callerId,
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(doctor)));
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(doctor))));
         return JSON.stringify({ message: `Doctor ${doctorId} registered at hospital ${doctor.hospitalId}`, data: doctor });
     }
 
@@ -277,7 +283,7 @@ class ehrChainCode extends Contract {
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(company)));
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(company))));
         return JSON.stringify({ message: `Insurance company ${companyId} registered`, data: company });
     }
 
@@ -304,7 +310,7 @@ class ehrChainCode extends Contract {
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(agent)));
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(agent))));
         return JSON.stringify({ message: `Agent ${agentId} registered at company ${agent.companyId}`, data: agent });
     }
 
@@ -331,7 +337,7 @@ class ehrChainCode extends Contract {
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(pharmacy)));
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(pharmacy))));
         return JSON.stringify({ message: `Pharmacy ${pharmacyId} registered`, data: pharmacy });
     }
 
@@ -351,40 +357,13 @@ class ehrChainCode extends Contract {
             dob,
             city,
             authorizedDoctors: [],
-            consentRequests: []
-        };
-
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(patient)));
-        return `Patient ${patientId} registered`;
-    }
-
-    // Dang ky nha nghien cuu - chi hospital admin moi co quyen
-    async onboardResearcher(ctx, args) {
-        const { researcherId, name, institution, field } = JSON.parse(args);
-        const { role } = this.getCallerAttributes(ctx);
-
-        if (role !== 'hospital') {
-            throw new Error('Only hospital admin can onboard researcher');
-        }
-
-        const key = `researcher-${researcherId}`;
-        const existing = await ctx.stub.getState(key);
-        if (existing && existing.length > 0) {
-            throw new Error(`Researcher ${researcherId} already exists`);
-        }
-
-        const researcher = {
-            researcherId,
-            name,
-            institution,
-            field,
-            approvedPatients: [],
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(key, Buffer.from(JSON.stringify(researcher)));
-        return JSON.stringify({ message: `Researcher ${researcherId} registered`, data: researcher });
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(patient))));
+        return `Patient ${patientId} registered`;
     }
+
 
     // ===========================================================================================
     // ACCESS CONTROL - Cap quyen & thu hoi quyen
@@ -414,7 +393,7 @@ class ehrChainCode extends Contract {
         }
 
         patient.authorizedDoctors.push(doctorIdToGrant);
-        await ctx.stub.putState(`patient-${patientId}`, Buffer.from(stringify(patient)));
+        await ctx.stub.putState(`patient-${patientId}`, Buffer.from(stringify(sortKeysRecursive(patient))));
 
         return JSON.stringify({ message: `Access granted to doctor ${doctorIdToGrant}` });
     }
@@ -444,7 +423,7 @@ class ehrChainCode extends Contract {
         }
 
         patient.authorizedDoctors.splice(index, 1);
-        await ctx.stub.putState(`patient-${patientId}`, Buffer.from(stringify(patient)));
+        await ctx.stub.putState(`patient-${patientId}`, Buffer.from(stringify(sortKeysRecursive(patient))));
 
         return JSON.stringify({ message: `Access revoked for doctor ${doctorIdToRevoke}` });
     }
@@ -498,7 +477,7 @@ class ehrChainCode extends Contract {
             version: 1
         };
 
-        await ctx.stub.putState(recordKey, Buffer.from(JSON.stringify(record)));
+        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(record))));
         return JSON.stringify({ message: `Record ${recordId} added for patient ${patientId}`, recordId });
     }
 
@@ -544,7 +523,7 @@ class ehrChainCode extends Contract {
         existingRecord.updatedBy = callerId;
         existingRecord.version = (existingRecord.version || 1) + 1;
 
-        await ctx.stub.putState(recordKey, Buffer.from(JSON.stringify(existingRecord)));
+        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(existingRecord))));
         return JSON.stringify({ message: `Record ${recordId} updated`, version: existingRecord.version });
     }
 
@@ -721,8 +700,8 @@ class ehrChainCode extends Contract {
     // Admin (hospital) xem toan bo ledger
     async fetchLedger(ctx) {
         const mspId = ctx.clientIdentity.getMSPID();
-        if (mspId !== 'Org1MSP') {
-            throw new Error('Only Org1 (hospital) members can fetch blockchain ledger');
+        if (!this.getHospitalMSPs().includes(mspId)) {
+            throw new Error('Only hospital org members can fetch blockchain ledger');
         }
 
         const allResults = [];
@@ -778,18 +757,6 @@ class ehrChainCode extends Contract {
             cRes = await claimIter.next();
         }
         await claimIter.close();
-
-        // Composite keys: reward
-        const rewIter = await ctx.stub.getStateByPartialCompositeKey('reward', []);
-        let rwRes = await rewIter.next();
-        while (!rwRes.done) {
-            try {
-                const val = JSON.parse(rwRes.value.value.toString('utf8'));
-                allResults.push({ Key: rwRes.value.key, Value: val });
-            } catch (_) {}
-            rwRes = await rewIter.next();
-        }
-        await rewIter.close();
 
         return stringify(allResults);
     }
@@ -934,7 +901,7 @@ class ehrChainCode extends Contract {
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(dispenseKey, Buffer.from(JSON.stringify(dispenseRecord)));
+        await ctx.stub.putState(dispenseKey, Buffer.from(stringify(sortKeysRecursive(dispenseRecord))));
 
         // Update original record with dispensed status so patients can see it
         const record = JSON.parse(recordJSON.toString());
@@ -942,7 +909,7 @@ class ehrChainCode extends Contract {
         record.dispensedBy = dispensedBy || callerId;
         record.dispensedAt = this.getTimestamp(ctx);
         record.dispensedNotes = dispensedNotes || '';
-        await ctx.stub.putState(recordKey, Buffer.from(JSON.stringify(record)));
+        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(record))));
 
         return JSON.stringify({ message: `Prescription ${recordId} dispensed`, dispenseId });
     }
@@ -1011,7 +978,7 @@ class ehrChainCode extends Contract {
             updatedAt: null
         };
 
-        await ctx.stub.putState(claimKey, Buffer.from(JSON.stringify(claim)));
+        await ctx.stub.putState(claimKey, Buffer.from(stringify(sortKeysRecursive(claim))));
         return JSON.stringify({ message: `Claim ${claimId} created`, claimId });
     }
 
@@ -1070,7 +1037,7 @@ class ehrChainCode extends Contract {
         claim.reviewNotes = reviewNotes || '';
         claim.updatedAt = this.getTimestamp(ctx);
 
-        await ctx.stub.putState(claimKey, Buffer.from(JSON.stringify(claim)));
+        await ctx.stub.putState(claimKey, Buffer.from(stringify(sortKeysRecursive(claim))));
         return JSON.stringify({ message: `Claim ${claimId} approved`, claim });
     }
 
@@ -1100,178 +1067,8 @@ class ehrChainCode extends Contract {
         claim.reviewNotes = reviewNotes || 'Claim rejected';
         claim.updatedAt = this.getTimestamp(ctx);
 
-        await ctx.stub.putState(claimKey, Buffer.from(JSON.stringify(claim)));
+        await ctx.stub.putState(claimKey, Buffer.from(stringify(sortKeysRecursive(claim))));
         return JSON.stringify({ message: `Claim ${claimId} rejected`, claim });
-    }
-
-    // ===========================================================================================
-    // RESEARCHER MODULE - Nghien cuu y te
-    // ===========================================================================================
-
-    // Nha nghien cuu gui yeu cau xin phep truy cap du lieu benh nhan
-    async requestConsent(ctx, args) {
-        const { researcherId, patientId, purpose } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-
-        if (role !== 'researcher') {
-            throw new Error('Only researchers can request consent');
-        }
-
-        // Kiem tra researcher ton tai
-        const researcherJSON = await ctx.stub.getState(`researcher-${researcherId}`);
-        if (!researcherJSON || researcherJSON.length === 0) {
-            throw new Error(`Researcher ${researcherId} not found`);
-        }
-
-        // Kiem tra benh nhan ton tai
-        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
-        if (!patientJSON || patientJSON.length === 0) {
-            throw new Error(`Patient ${patientId} not found`);
-        }
-
-        const patient = JSON.parse(patientJSON.toString());
-        if (!patient.consentRequests) {
-            patient.consentRequests = [];
-        }
-
-        // Kiem tra da co request chua
-        const existingRequest = patient.consentRequests.find(
-            r => r.researcherId === researcherId && r.status === 'pending'
-        );
-        if (existingRequest) {
-            throw new Error(`Pending consent request already exists from researcher ${researcherId}`);
-        }
-
-        const txId = ctx.stub.getTxID();
-        const requestId = `CONSENT-${txId}`;
-
-        patient.consentRequests.push({
-            requestId,
-            researcherId,
-            purpose: purpose || '',
-            status: 'pending',
-            timestamp: this.getTimestamp(ctx)
-        });
-
-        await ctx.stub.putState(`patient-${patientId}`, Buffer.from(JSON.stringify(patient)));
-        return JSON.stringify({ message: `Consent request sent to patient ${patientId}`, requestId });
-    }
-
-    // Benh nhan duyet hoac tu choi yeu cau consent
-    async approveConsent(ctx, args) {
-        const { patientId, requestId, approved } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-
-        if (role !== 'patient') {
-            throw new Error('Only patients can approve/reject consent requests');
-        }
-        if (callerId !== patientId) {
-            throw new Error('Caller is not the owner of this patient record');
-        }
-
-        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
-        if (!patientJSON || patientJSON.length === 0) {
-            throw new Error(`Patient ${patientId} not found`);
-        }
-
-        const patient = JSON.parse(patientJSON.toString());
-        const request = patient.consentRequests.find(r => r.requestId === requestId);
-
-        if (!request) {
-            throw new Error(`Consent request ${requestId} not found`);
-        }
-        if (request.status !== 'pending') {
-            throw new Error(`Consent request ${requestId} is already ${request.status}`);
-        }
-
-        request.status = approved ? 'approved' : 'rejected';
-        request.respondedAt = this.getTimestamp(ctx);
-
-        // Neu duyet, them researcher vao danh sach approved cua researcher
-        if (approved) {
-            const researcherJSON = await ctx.stub.getState(`researcher-${request.researcherId}`);
-            if (researcherJSON && researcherJSON.length > 0) {
-                const researcher = JSON.parse(researcherJSON.toString());
-                if (!researcher.approvedPatients.includes(patientId)) {
-                    researcher.approvedPatients.push(patientId);
-                    await ctx.stub.putState(`researcher-${request.researcherId}`, Buffer.from(JSON.stringify(researcher)));
-                }
-            }
-        }
-
-        await ctx.stub.putState(`patient-${patientId}`, Buffer.from(JSON.stringify(patient)));
-        return JSON.stringify({ message: `Consent request ${requestId} ${request.status}` });
-    }
-
-    // Nha nghien cuu lay du lieu AN DANH cua benh nhan da dong y
-    // Du lieu duoc loai bo thong tin ca nhan (ten, ngay sinh cu the)
-    async getAnonymizedData(ctx, args) {
-        const { researcherId, patientId } = JSON.parse(args);
-        const { role } = this.getCallerAttributes(ctx);
-
-        if (role !== 'researcher') {
-            throw new Error('Only researchers can access anonymized data');
-        }
-
-        // Kiem tra researcher co quyen truy cap khong
-        const researcherJSON = await ctx.stub.getState(`researcher-${researcherId}`);
-        if (!researcherJSON || researcherJSON.length === 0) {
-            throw new Error(`Researcher ${researcherId} not found`);
-        }
-
-        const researcher = JSON.parse(researcherJSON.toString());
-        if (!researcher.approvedPatients.includes(patientId)) {
-            throw new Error(`Researcher ${researcherId} does not have consent from patient ${patientId}`);
-        }
-
-        // Lay du lieu benh nhan
-        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
-        if (!patientJSON || patientJSON.length === 0) {
-            throw new Error(`Patient ${patientId} not found`);
-        }
-
-        const patient = JSON.parse(patientJSON.toString());
-
-        // Lay tat ca record
-        const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
-        const records = [];
-        let _res = await iterator.next();
-        while (!_res.done) {
-            const record = JSON.parse(_res.value.value.toString('utf8'));
-            // An danh hoa: chi giu lai du lieu y te, bo thong tin dinh danh
-            records.push({
-                recordId: record.recordId,
-                diagnosis: record.diagnosis,
-                prescription: record.prescription,
-                timestamp: record.timestamp
-            });
-            _res = await iterator.next();
-        }
-        await iterator.close();
-
-        // Tra ve du lieu an danh
-        const anonymized = {
-            anonymousId: `ANON-${patientId.substring(0, 4)}`,
-            ageRange: this.calculateAgeRange(patient.dob),
-            city: patient.city,
-            totalRecords: records.length,
-            records
-        };
-
-        return JSON.stringify(anonymized);
-    }
-
-    // Tinh khoang tuoi de an danh (khong tra ve tuoi chinh xac)
-    calculateAgeRange(dob) {
-        if (!dob) return 'unknown';
-        const birth = new Date(dob);
-        const now = new Date();
-        const age = now.getFullYear() - birth.getFullYear();
-        if (age < 18) return '0-17';
-        if (age < 30) return '18-29';
-        if (age < 45) return '30-44';
-        if (age < 60) return '45-59';
-        return '60+';
     }
 
     // ===========================================================================================
@@ -1312,7 +1109,7 @@ class ehrChainCode extends Contract {
             timestamp: this.getTimestamp(ctx)
         };
 
-        await ctx.stub.putState(logKey, Buffer.from(JSON.stringify(emergencyLog)));
+        await ctx.stub.putState(logKey, Buffer.from(stringify(sortKeysRecursive(emergencyLog))));
 
         // Lay tat ca record cua benh nhan
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
@@ -1360,88 +1157,6 @@ class ehrChainCode extends Contract {
         return JSON.stringify(results);
     }
 
-    // ===========================================================================================
-    // REWARD SYSTEM - He thong thuong cho benh nhan chia se du lieu
-    // ===========================================================================================
-
-    // Cap thuong cho benh nhan khi dong y chia se du lieu nghien cuu
-    async issueReward(ctx, args) {
-        const { patientId, amount, reason } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-
-        if (role !== 'hospital' && role !== 'researcher') {
-            throw new Error('Only hospital or researcher can issue rewards');
-        }
-
-        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
-        if (!patientJSON || patientJSON.length === 0) {
-            throw new Error(`Patient ${patientId} not found`);
-        }
-
-        const txId = ctx.stub.getTxID();
-        const rewardId = `RWD-${txId}`;
-        const rewardKey = ctx.stub.createCompositeKey('reward', [patientId, rewardId]);
-
-        const reward = {
-            rewardId,
-            patientId,
-            amount: Number(amount),
-            reason: reason || 'Data sharing reward',
-            issuedBy: callerId,
-            status: 'unclaimed',
-            timestamp: this.getTimestamp(ctx),
-            claimedAt: null
-        };
-
-        await ctx.stub.putState(rewardKey, Buffer.from(JSON.stringify(reward)));
-        return JSON.stringify({ message: `Reward ${rewardId} issued to patient ${patientId}`, rewardId });
-    }
-
-    // Benh nhan nhan thuong
-    async claimReward(ctx, args) {
-        const { patientId, rewardId } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-
-        if (role !== 'patient') {
-            throw new Error('Only patients can claim rewards');
-        }
-        if (callerId !== patientId) {
-            throw new Error('Patient can only claim their own rewards');
-        }
-
-        const rewardKey = ctx.stub.createCompositeKey('reward', [patientId, rewardId]);
-        const rewardJSON = await ctx.stub.getState(rewardKey);
-        if (!rewardJSON || rewardJSON.length === 0) {
-            throw new Error(`Reward ${rewardId} not found for patient ${patientId}`);
-        }
-
-        const reward = JSON.parse(rewardJSON.toString());
-        if (reward.status === 'claimed') {
-            throw new Error(`Reward ${rewardId} already claimed`);
-        }
-
-        reward.status = 'claimed';
-        reward.claimedAt = this.getTimestamp(ctx);
-
-        await ctx.stub.putState(rewardKey, Buffer.from(JSON.stringify(reward)));
-        return JSON.stringify({ message: `Reward ${rewardId} claimed successfully`, reward });
-    }
-
-    // Xem tat ca reward cua 1 benh nhan
-    async getRewardsByPatient(ctx, args) {
-        const { patientId } = JSON.parse(args);
-        const iterator = await ctx.stub.getStateByPartialCompositeKey('reward', [patientId]);
-        const results = [];
-
-        let _res = await iterator.next();
-        while (!_res.done) {
-            results.push(JSON.parse(_res.value.value.toString('utf8')));
-            _res = await iterator.next();
-        }
-        await iterator.close();
-
-        return JSON.stringify(results);
-    }
 }
 
 module.exports = ehrChainCode;

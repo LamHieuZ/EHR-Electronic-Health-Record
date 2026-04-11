@@ -1,6 +1,6 @@
 # Electronic Health Record (EHR) - Blockchain Based Platform
 
-A decentralized healthcare system for secure management of electronic health records using **Hyperledger Fabric**. The platform enables patients, doctors, hospitals, pharmacies, insurance companies, and researchers to interact with medical data through role-based access control on an immutable blockchain ledger.
+A decentralized healthcare system for secure management of electronic health records using **Hyperledger Fabric**. The platform enables patients, doctors, hospitals, pharmacies, and insurance companies to interact with medical data through role-based access control on an immutable blockchain ledger.
 
 ## Tech Stack
 
@@ -18,33 +18,35 @@ A decentralized healthcare system for secure management of electronic health rec
 Toàn bộ project chạy trong **WSL (Ubuntu)**. Trình duyệt trên Windows truy cập qua `localhost`.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                     WSL / Ubuntu                          │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │           Hyperledger Fabric Network               │  │
-│  │   Org1 (Hospital) ◄──────────► Org2 (Insurance)   │  │
-│  │   Peer: port 7051               Peer: port 9051    │  │
-│  │   CouchDB: port 5984            CouchDB: 7984      │  │
-│  │   CA: port 7054                 CA: port 8054      │  │
-│  │               Channel: mychannel                   │  │
-│  │            Chaincode: ehrChainCode                 │  │
-│  └──────────────────────┬─────────────────────────────┘  │
-│                         │ crypto/certs (local)            │
-│  ┌──────────────────────▼─────────────────────────────┐  │
-│  │        Backend: Node.js + Express (port 5000)      │  │
-│  │        Fabric Network SDK (đọc file trực tiếp)     │  │
-│  └──────────────────────┬─────────────────────────────┘  │
-│                         │ REST API (/api proxy)           │
-│  ┌──────────────────────▼─────────────────────────────┐  │
-│  │         Frontend: React + Vite (port 3000)         │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │     Hyperledger Explorer (port 8080) [optional]    │  │
-│  └────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
-              ▲ truy cập từ Windows browser qua localhost
+┌─────────────────────────────────────────────────────────────────┐
+│                         WSL / Ubuntu                             │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Hyperledger Fabric Network                    │  │
+│  │                                                           │  │
+│  │  Org1 (Hospital)    Org2 (Insurance)   Org3 (Hospital)    │  │
+│  │  Peer: 7051         Peer: 9051         Peer: 11051        │  │
+│  │  CouchDB: 5984      CouchDB: 7984      CouchDB: 9984     │  │
+│  │  CA: 7054           CA: 8054           CA: 11054          │  │
+│  │                                                           │  │
+│  │              Channel: mychannel                           │  │
+│  │           Chaincode: ehrChainCode                         │  │
+│  └─────────────────────────┬─────────────────────────────────┘  │
+│                             │ crypto/certs (local)               │
+│  ┌─────────────────────────▼─────────────────────────────────┐  │
+│  │          Backend: Node.js + Express (port 5000)           │  │
+│  │          Fabric Network SDK (đọc file trực tiếp)          │  │
+│  └─────────────────────────┬─────────────────────────────────┘  │
+│                             │ REST API (/api proxy)              │
+│  ┌─────────────────────────▼─────────────────────────────────┐  │
+│  │           Frontend: React + Vite (port 3000)              │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │       Hyperledger Explorer (port 8080) [optional]         │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                ▲ truy cập từ Windows browser qua localhost
 ```
 
 ## Project Structure
@@ -61,7 +63,6 @@ EHR-Hyperledger-Fabric-Project/
 │   │   │   ├── PatientRecords.jsx
 │   │   │   ├── AccessControl.jsx
 │   │   │   ├── Prescriptions.jsx
-│   │   │   ├── ResearchConsent.jsx
 │   │   │   ├── EmergencyLogs.jsx
 │   │   │   └── Rewards.jsx
 │   │   ├── components/
@@ -72,10 +73,12 @@ EHR-Hyperledger-Fabric-Project/
 │
 ├── server-node-sdk/               # Express backend (port 5000)
 │   ├── app.js                     # API routes
-│   ├── helper.js                  # Fabric gateway & user registration
+│   ├── helper.js                  # Fabric CA user registration & wallet
+│   ├── fabric-connection.js       # Shared gateway connection logic
 │   ├── invoke.js                  # Chaincode invoke (write)
 │   ├── query.js                   # Chaincode query (read)
-│   ├── cert-script/               # Admin registration & onboarding scripts
+│   ├── fhir.js                    # FHIR R4 API router
+│   ├── cert-script/               # Admin registration & onboarding scripts (Org1, Org2, Org3)
 │   └── wallet/                    # User identities & certificates
 │
 ├── fabric-samples/
@@ -129,23 +132,56 @@ cd fabric-samples/test-network
 
 > Chạy lại lệnh này mỗi khi có thay đổi chaincode.
 
-### 4. Register Admins & Onboard Organizations
+### 4. Register Admins & Onboard Organizations (Org1 + Org2)
 
 ```bash
 cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/server-node-sdk/
 npm install
 
-# Đăng ký admin cho cả 2 org
+# Đăng ký admin Org1 (hospital) + Org2 (insurance)
 node cert-script/registerHospitalAdmin.js
 node cert-script/registerInsuranceAdmin.js
 
-# Onboard các entity
-node cert-script/onboardHospital01.js
+# Onboard bác sĩ, nhà thuốc, bảo hiểm
 node cert-script/onboardDoctor.js
 node cert-script/onboardPharmacy.js
 node cert-script/onboardInsuranceCompany.js
 node cert-script/onboardInsuranceAgent.js
 ```
+
+### 4b. (Optional) Add Org3 - Bệnh viện mới gia nhập mạng
+
+Org3 là tổ chức bệnh viện thứ 2, có peer, CA, CouchDB riêng.
+
+```bash
+# Thêm Org3 vào Fabric network (peer, CA, CouchDB riêng)
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-samples/test-network/addOrg3/
+./addOrg3.sh up -ca -s couchdb -c mychannel
+
+# Cài lại chaincode cho cả 3 org
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-samples/test-network/
+./network.sh deployCC -ccn ehrChainCode \
+  -ccp ../asset-transfer-basic/chaincode-javascript/ \
+  -ccl javascript
+
+# Đăng ký admin Org3 + onboard bệnh viện + bác sĩ
+cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/server-node-sdk/
+node cert-script/registerHospital3Admin.js
+node cert-script/onboardOrg3Doctor.js
+```
+
+Sau khi chạy xong, Org3 sẽ có:
+
+| Component | Thông tin |
+|-----------|-----------|
+| Peer | `peer0.org3.example.com:11051` |
+| CA | port `11054` |
+| CouchDB | port `9984` |
+| MSP | `Org3MSP` |
+| Admin | `hospital3Admin` |
+| Doctor | `Org3Doctor01` |
+
+Đăng nhập bằng `hospital3Admin` để quản lý Org3 (sổ cái, phần thưởng, đăng ký bác sĩ/bệnh nhân mới).
 
 ### 5. Start the Backend Server
 
@@ -195,14 +231,13 @@ cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-samples/test-network && .
 
 | Role | Redirect | Trang chính |
 |------|----------|-------------|
-| `patient` | `/dashboard` | Tổng quan, Hồ sơ bệnh án, Quyền truy cập, Đơn thuốc, Bảo hiểm, Nghiên cứu, Phần thưởng, Nhật ký khẩn cấp |
+| `patient` | `/dashboard` | Tổng quan, Hồ sơ bệnh án, Quyền truy cập, Đơn thuốc, Bảo hiểm, Phần thưởng, Nhật ký khẩn cấp |
 | `doctor` | `/doctor` | Bảng điều khiển, Hồ sơ bệnh án, Đơn thuốc, Truy cập khẩn cấp |
 | `hospitalAdmin` | `/admin/ledger` | Bệnh viện & Bác sĩ, Phần thưởng, Sổ cái Blockchain |
 | `hospital` (e.g. Hospital01) | `/admin/ledger` | Danh sách bác sĩ + thêm bác sĩ |
 | `pharmacy` | `/prescriptions` | Đơn thuốc |
 | `insuranceAdmin` / `insurance` | `/insurance` | Chi nhánh, Sổ cái Blockchain (Org2) |
 | `agent` | `/insurance` | Yêu cầu bảo hiểm (duyệt/từ chối) |
-| `researcher` | `/research` | Gửi yêu cầu đồng ý, Dữ liệu ẩn danh |
 
 ---
 
@@ -237,10 +272,6 @@ cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/fabric-samples/test-network && .
 ### Phần thưởng
 - hospitalAdmin phát thưởng cho bệnh nhân (chọn từ danh sách, nhập điểm, lý do)
 - Bệnh nhân nhận thưởng và xem lịch sử
-
-### Nghiên cứu & Đồng ý
-- **Researcher**: gửi yêu cầu đồng ý đến bệnh nhân, truy cập dữ liệu ẩn danh (HIPAA)
-- **Bệnh nhân**: xem danh sách yêu cầu đang chờ, đồng ý/từ chối trực tiếp từng request
 
 ### Truy cập khẩn cấp
 - **Bác sĩ**: truy cập khẩn cấp hồ sơ bệnh nhân (lý do tối thiểu 10 ký tự), hiện ngay thông tin bệnh nhân + hồ sơ
@@ -300,14 +331,6 @@ Base URL: `http://localhost:5000`
 | `/approveClaim` | Duyệt yêu cầu |
 | `/rejectClaim` | Từ chối yêu cầu |
 
-### Research & Consent
-| Endpoint | Mô tả |
-|----------|-------|
-| `/onboardResearcher` | Đăng ký nhà nghiên cứu |
-| `/requestConsent` | Gửi yêu cầu đồng ý |
-| `/approveConsent` | Bệnh nhân đồng ý/từ chối |
-| `/getAnonymizedData` | Lấy dữ liệu ẩn danh (cần consent) |
-
 ### Emergency
 | Endpoint | Mô tả |
 |----------|-------|
@@ -355,7 +378,6 @@ Smart contract `ehrChainCode.js` bao gồm các nhóm function:
 | **Access** | `grantAccess`, `revokeAccess` |
 | **Pharmacy** | `getPrescriptionsByPatient`, `getAllPrescriptions`, `verifyPrescription` |
 | **Insurance** | `createClaim`, `getClaim`, `getClaimsByPatient`, `getAllClaims`, `approveClaim`, `rejectClaim` |
-| **Research** | `onboardResearcher`, `requestConsent`, `approveConsent`, `getAnonymizedData` |
 | **Emergency** | `emergencyAccess`, `getEmergencyLogs` |
 | **Rewards** | `issueReward`, `claimReward`, `getRewardsByPatient` |
 | **Onboard** | `onboardHospital`, `onboardDoctor`, `onboardPharmacy`, `onboardInsuranceCompany`, `onboardInsuranceAgent` |
@@ -370,7 +392,6 @@ Smart contract `ehrChainCode.js` bao gồm các nhóm function:
 | `doctor-{id}` | Thông tin bác sĩ |
 | `insurance-{id}` | Công ty bảo hiểm |
 | `agent-{id}` | Chi nhánh bảo hiểm |
-| `researcher-{id}` | Nhà nghiên cứu |
 | `record\|{patientId}\|{recordId}` | Hồ sơ bệnh án *(composite key)* |
 | `claim\|{patientId}\|{claimId}` | Yêu cầu bảo hiểm *(composite key)* |
 | `dispense\|{patientId}\|{dispenseId}` | Cấp phát thuốc *(composite key)* |

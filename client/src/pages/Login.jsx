@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { loginPatient } from '../services/api'
+import { loginPatient, getPatientById, getAllDoctors, getAllHospitals } from '../services/api'
 import { toast } from 'react-toastify'
 import { FiActivity, FiUser, FiArrowRight } from 'react-icons/fi'
 
@@ -21,8 +21,29 @@ export default function Login() {
     try {
       const res = await loginPatient({ userId: form.userId.trim() })
       if (res.data.userID) {
-        login({ userId: res.data.userID, role: res.data.role })
-        toast.success('Đăng nhập thành công!')
+        const userData = { userId: res.data.userID, role: res.data.role }
+        // Fetch ten tu blockchain theo role
+        try {
+          const id = res.data.userID
+          const role = res.data.role
+          if (role === 'patient') {
+            const pRes = await getPatientById({ userId: id, patientId: id })
+            const p = typeof pRes.data?.data === 'string' ? JSON.parse(pRes.data.data) : pRes.data?.data
+            if (p?.name) userData.name = p.name
+          } else if (role === 'doctor') {
+            const dRes = await getAllDoctors({ userId: id, hospitalId: '' })
+            const docs = typeof dRes.data?.data === 'string' ? JSON.parse(dRes.data.data) : dRes.data?.data
+            const doc = Array.isArray(docs) && docs.find(d => d.doctorId === id)
+            if (doc?.name) userData.name = doc.name
+          } else if (role === 'hospital') {
+            const hRes = await getAllHospitals({ userId: id })
+            const hospitals = typeof hRes.data?.data === 'string' ? JSON.parse(hRes.data.data) : hRes.data?.data
+            const h = Array.isArray(hospitals) && hospitals.find(h => h.hospitalId === id)
+            if (h?.name) userData.name = h.name
+          }
+        } catch { /* ignore - fallback to userId */ }
+        login(userData)
+        toast.success(`Đăng nhập thành công!`)
         navigate('/')
       } else {
         toast.error(res.data.message || 'Đăng nhập thất bại')

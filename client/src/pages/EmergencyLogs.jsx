@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { emergencyAccess, getEmergencyLogs } from '../services/api'
+import { emergencyAccess, getEmergencyLogs, getMyPatients } from '../services/api'
 import { toast } from 'react-toastify'
 import {
   FiAlertTriangle, FiSearch, FiClock, FiRefreshCw,
@@ -12,9 +12,28 @@ import {
 // ============================================================
 function DoctorView({ user }) {
   const [patientId, setPatientId] = useState('')
+  const [searchName, setSearchName] = useState('')
+  const [patients, setPatients] = useState([])
+  const [loadingPatients, setLoadingPatients] = useState(false)
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+
+  useEffect(() => { loadPatients() }, [])
+
+  const loadPatients = async () => {
+    setLoadingPatients(true)
+    try {
+      const res = await getMyPatients({ userId: user.userId })
+      const raw = res.data?.data
+      setPatients(Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []))
+    } catch { /* ignore */ }
+    finally { setLoadingPatients(false) }
+  }
+
+  const filteredPatients = patients.filter(p =>
+    !searchName || (p.name || p.patientId || '').toLowerCase().includes(searchName.toLowerCase())
+  )
 
   const handleAccess = async (e) => {
     e.preventDefault()
@@ -58,15 +77,61 @@ function DoctorView({ user }) {
           <FiShield className="text-red-500" /> Thông tin truy cập
         </h2>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
-          <input
-            type="text"
-            value={patientId}
-            onChange={(e) => setPatientId(e.target.value)}
-            className="input-field"
-            placeholder="VD: patient01"
-            required
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-1">Bệnh nhân *</label>
+          {/* Tim kiem theo ten */}
+          <div className="relative mb-2">
+            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              className="input-field pl-10"
+              placeholder="Tìm theo tên bệnh nhân..."
+            />
+          </div>
+          {/* Danh sach benh nhan */}
+          {loadingPatients ? (
+            <p className="text-xs text-gray-400">Đang tải danh sách...</p>
+          ) : patients.length === 0 ? (
+            <div>
+              <p className="text-xs text-gray-400 mb-2">Không có bệnh nhân đã cấp quyền. Nhập Patient ID trực tiếp:</p>
+              <input
+                type="text"
+                value={patientId}
+                onChange={(e) => setPatientId(e.target.value)}
+                className="input-field"
+                placeholder="VD: P-nguyenvana-x7k2"
+                required
+              />
+            </div>
+          ) : (
+            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+              {filteredPatients.length === 0 ? (
+                <p className="text-xs text-gray-400 p-3 text-center">Không tìm thấy</p>
+              ) : filteredPatients.map((p, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => { setPatientId(p.patientId); setSearchName(p.name || p.patientId) }}
+                  className={`w-full text-left px-3 py-2 flex items-center gap-3 hover:bg-gray-50 transition-colors ${
+                    patientId === p.patientId ? 'bg-primary-50 border-l-2 border-primary-500' : ''
+                  }`}
+                >
+                  <FiUser className="text-gray-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{p.name || p.patientId}</p>
+                    <p className="text-xs text-gray-400 font-mono">{p.patientId}</p>
+                  </div>
+                  {patientId === p.patientId && (
+                    <span className="text-xs text-primary-600 font-medium">Đã chọn</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {patientId && (
+            <p className="text-xs text-primary-600 mt-1">Đã chọn: <span className="font-mono">{patientId}</span></p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">

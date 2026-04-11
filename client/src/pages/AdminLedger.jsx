@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { fetchLedger, getAllHospitals, getAllDoctors, onboardHospital, onboardDoctor, issueReward, getRewardsByPatient, getMyPatients } from '../services/api'
+import { fetchLedger, getAllHospitals, getAllDoctors, onboardHospital, onboardDoctor } from '../services/api'
 import { toast } from 'react-toastify'
 import {
   FiDatabase, FiDownload, FiSearch, FiRefreshCw, FiUser, FiFileText,
-  FiShield, FiDollarSign, FiPackage, FiActivity, FiAlertCircle, FiGift,
-  FiLayers, FiMapPin, FiChevronDown, FiChevronRight, FiUsers, FiPlus, FiStar, FiCheck, FiBriefcase,
+  FiShield, FiDollarSign, FiPackage, FiActivity, FiAlertCircle,
+  FiLayers, FiMapPin, FiChevronDown, FiChevronRight, FiUsers, FiPlus, FiCheck, FiBriefcase,
 } from 'react-icons/fi'
+import BlockchainView, { ViewModeToggle } from '../components/BlockchainView'
 
 // ============================================================
 // Ledger helpers
@@ -21,8 +23,6 @@ const TYPE_META = {
   claim:     { label: 'Yêu cầu BH',       color: 'amber',  icon: FiDollarSign },
   dispense:  { label: 'Cấp thuốc',        color: 'teal',   icon: FiPackage },
   emergency: { label: 'Khẩn cấp',         color: 'red',    icon: FiAlertCircle },
-  reward:    { label: 'Phần thưởng',      color: 'pink',   icon: FiGift },
-  researcher:{ label: 'Nghiên cứu',       color: 'indigo', icon: FiDatabase },
 }
 
 const COLOR_MAP = {
@@ -47,23 +47,21 @@ function getDocType(item) {
   if (val.recordId && val.diagnosis) return 'record'
   if (val.claimId) return 'claim'
   if (val.dispenseId) return 'dispense'
-  if (val.rewardId) return 'reward'
   if (val.agentId) return 'agent'
   if (val.companyId && !val.agentId) return 'insurance'
   if (val.doctorId && val.hospitalId) return 'doctor'
   if (val.hospitalId && val.name && !val.patientId && !val.doctorId) return 'hospital'
   if (val.pharmacyId) return 'dispense'
-  if (val.researcherId) return 'researcher'
   return 'data'
 }
 
 function getEntryId(item) {
   const val = item.Value || item
   if (item.Key) return item.Key
-  return val.recordId || val.claimId || val.dispenseId || val.rewardId
+  return val.recordId || val.claimId || val.dispenseId
     || val.agentId || val.companyId
     || val.patientId || val.doctorId || val.hospitalId || val.pharmacyId
-    || val.researcherId || null
+    || null
 }
 
 function EntryPreview({ val, docType }) {
@@ -375,6 +373,227 @@ function HospitalsTab({ userId }) {
   )
 }
 
+
+// ============================================================
+// Doctors tab — Admin quan ly bac si truc tiep
+// ============================================================
+const DEPARTMENTS = ['Nội khoa', 'Ngoại khoa', 'Sản khoa', 'Nhi khoa', 'Tim mạch', 'Thần kinh', 'Da liễu', 'Mắt', 'Tai Mũi Họng', 'Răng Hàm Mặt', 'Ung bướu', 'Chấn thương chỉnh hình', 'Hồi sức cấp cứu', 'Khác']
+const POSITIONS = ['Bác sĩ', 'Bác sĩ chuyên khoa I', 'Bác sĩ chuyên khoa II', 'Thạc sĩ', 'Tiến sĩ', 'Phó Giáo sư', 'Giáo sư', 'Trưởng khoa', 'Phó khoa']
+
+function DoctorsTab({ userId }) {
+  const [doctors, setDoctors] = useState([])
+  const [hospitals, setHospitals] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+  const [submitting, setSubmitting] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [docRes, hosRes] = await Promise.all([
+        getAllDoctors({ userId, hospitalId: '' }),
+        getAllHospitals({ userId }),
+      ])
+      const docs = docRes.data?.data
+      setDoctors(Array.isArray(docs) ? docs : (typeof docs === 'string' ? JSON.parse(docs || '[]') : []))
+      const hos = hosRes.data?.data
+      setHospitals(Array.isArray(hos) ? hos : (typeof hos === 'string' ? JSON.parse(hos || '[]') : []))
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi tải dữ liệu')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    if (!form.name) return
+    setSubmitting(true)
+    try {
+      const normalized = form.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim().replace(/\s+/g, '')
+      const doctorId = `D-${normalized.slice(0, 10)}-${Date.now().toString(36).slice(-4)}`
+      const res = await onboardDoctor({
+        hospitalUserId: userId,
+        hospitalId: userId,
+        doctorId,
+        name: form.name,
+        city: form.city,
+        dob: form.dob,
+        department: form.department,
+        position: form.position,
+        specialization: form.specialization,
+        phone: form.phone,
+      })
+      if (res.data.success || res.data.message || res.data.userID) {
+        toast.success(`Đã thêm bác sĩ ${form.name} — ID: ${doctorId}`, { autoClose: false })
+        setForm({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+        setShowForm(false)
+        load()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi thêm bác sĩ')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const filtered = doctors.filter(d =>
+    !filter || JSON.stringify(d).toLowerCase().includes(filter.toLowerCase())
+  )
+
+  // Group by hospital
+  const grouped = {}
+  filtered.forEach(d => {
+    const hId = d.hospitalId || 'Không rõ'
+    if (!grouped[hId]) grouped[hId] = []
+    grouped[hId].push(d)
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          {doctors.length > 0 ? `${doctors.length} bác sĩ trong hệ thống` : 'Tải danh sách bác sĩ từ blockchain'}
+        </p>
+        <div className="flex gap-2">
+          <button onClick={() => setShowForm(v => !v)} className="btn-secondary flex items-center gap-2 text-sm">
+            <FiPlus /> Thêm bác sĩ
+          </button>
+          <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
+            <FiRefreshCw className={loading ? 'animate-spin' : ''} />
+            {doctors.length === 0 ? 'Tải dữ liệu' : 'Làm mới'}
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="card border-2 border-purple-100">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FiActivity className="text-purple-600" /> Thêm bác sĩ mới
+          </h3>
+          <form onSubmit={handleAdd} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên *</label>
+                <input type="text" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} className="input-field" placeholder="VD: Nguyễn Văn B" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ngày sinh</label>
+                <input type="date" value={form.dob} onChange={(e) => setForm(f => ({ ...f, dob: e.target.value }))} className="input-field" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
+                <input type="tel" value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} className="input-field" placeholder="VD: 0912345678" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Khoa</label>
+                <select value={form.department} onChange={(e) => setForm(f => ({ ...f, department: e.target.value }))} className="input-field">
+                  <option value="">-- Chọn khoa --</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chức vụ</label>
+                <select value={form.position} onChange={(e) => setForm(f => ({ ...f, position: e.target.value }))} className="input-field">
+                  <option value="">-- Chọn chức vụ --</option>
+                  {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chuyên khoa</label>
+                <input type="text" value={form.specialization} onChange={(e) => setForm(f => ({ ...f, specialization: e.target.value }))} className="input-field" placeholder="VD: Phẫu thuật tim" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
+                <input type="text" value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: Hà Nội" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
+                {submitting
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <FiPlus />}
+                Thêm bác sĩ
+              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {doctors.length > 0 && (
+        <div className="relative">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="input-field pl-10"
+            placeholder="Tìm theo tên, ID bác sĩ, bệnh viện..."
+          />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : doctors.length === 0 ? (
+        <div className="card text-center py-16">
+          <FiActivity className="text-5xl text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-400">Nhấn "Tải dữ liệu" để xem danh sách bác sĩ</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card text-center py-10">
+          <p className="text-gray-400">Không tìm thấy kết quả</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(grouped).map(([hospitalId, docs]) => {
+            const hospital = hospitals.find(h => h.hospitalId === hospitalId)
+            return (
+              <div key={hospitalId}>
+                <div className="flex items-center gap-2 mb-3">
+                  <FiShield className="text-cyan-600" />
+                  <h3 className="font-semibold text-gray-700">{hospital?.name || hospitalId}</h3>
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{docs.length} bác sĩ</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {docs.map((doc, i) => (
+                    <div key={i} className="card flex items-start gap-3">
+                      <div className="w-11 h-11 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <FiActivity className="text-purple-600 text-lg" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{doc.name || doc.doctorId}</p>
+                        <p className="text-xs text-gray-400 font-mono">{doc.doctorId}</p>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {doc.position && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{doc.position}</span>}
+                          {doc.department && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{doc.department}</span>}
+                          {doc.specialization && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{doc.specialization}</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
+                          {doc.phone && <span>{doc.phone}</span>}
+                          {doc.city && <span className="flex items-center gap-0.5"><FiMapPin className="text-[10px]" />{doc.city}</span>}
+                          {doc.dob && <span>NS: {doc.dob}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ============================================================
 // Ledger tab
 // ============================================================
@@ -383,6 +602,7 @@ function LedgerTab({ userId }) {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [activeType, setActiveType] = useState('all')
+  const [viewMode, setViewMode] = useState('list') // 'list' or 'blocks'
 
   const loadLedger = async () => {
     setLoading(true)
@@ -427,6 +647,9 @@ function LedgerTab({ userId }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">Toàn bộ dữ liệu trên Hyperledger Fabric</p>
         <div className="flex gap-2">
+          {ledger.length > 0 && (
+            <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
+          )}
           <button onClick={loadLedger} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
             <FiRefreshCw className={loading ? 'animate-spin' : ''} />
             {ledger.length === 0 ? 'Tải sổ cái' : 'Làm mới'}
@@ -485,43 +708,49 @@ function LedgerTab({ userId }) {
             />
           </div>
 
-          <p className="text-sm text-gray-400">Hiển thị {filteredLedger.length} / {ledger.length} bản ghi</p>
+          {viewMode === 'blocks' ? (
+            <BlockchainView ledger={filteredLedger} getDocType={getDocType} typeMeta={TYPE_META} colorMap={COLOR_MAP} EntryPreview={EntryPreview} />
+          ) : (
+            <>
+              <p className="text-sm text-gray-400">Hiển thị {filteredLedger.length} / {ledger.length} bản ghi</p>
 
-          <div className="space-y-2">
-            {filteredLedger.map((item, i) => {
-              const val = item.Value || item
-              const docType = getDocType(item)
-              const key = getEntryId(item) || `entry-${i}`
-              const meta = TYPE_META[docType] || { label: docType, color: 'gray', icon: FiDatabase }
-              const c = COLOR_MAP[meta.color] || COLOR_MAP.gray
-              const Icon = meta.icon
+              <div className="space-y-2">
+                {filteredLedger.map((item, i) => {
+                  const val = item.Value || item
+                  const docType = getDocType(item)
+                  const key = getEntryId(item) || `entry-${i}`
+                  const meta = TYPE_META[docType] || { label: docType, color: 'gray', icon: FiDatabase }
+                  const c = COLOR_MAP[meta.color] || COLOR_MAP.gray
+                  const Icon = meta.icon
 
-              return (
-                <details key={i} className="card group p-0 overflow-hidden">
-                  <summary className="flex items-center gap-3 p-4 cursor-pointer list-none hover:bg-gray-50/50 transition-colors">
-                    <div className={`w-8 h-8 ${c.icon} rounded-lg flex items-center justify-center flex-shrink-0`}>
-                      <Icon className="text-sm" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-mono text-sm text-gray-900 truncate block">{key}</span>
-                      <EntryPreview val={val} docType={docType} />
-                    </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${c.badge}`}>
-                      {meta.label}
-                    </span>
-                    <svg className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </summary>
-                  <div className="px-4 pb-4 border-t border-gray-100">
-                    <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap mt-3">
-                      {JSON.stringify(val, null, 2)}
-                    </pre>
-                  </div>
-                </details>
-              )
-            })}
-          </div>
+                  return (
+                    <details key={i} className="card group p-0 overflow-hidden">
+                      <summary className="flex items-center gap-3 p-4 cursor-pointer list-none hover:bg-gray-50/50 transition-colors">
+                        <div className={`w-8 h-8 ${c.icon} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                          <Icon className="text-sm" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-mono text-sm text-gray-900 truncate block">{key}</span>
+                          <EntryPreview val={val} docType={docType} />
+                        </div>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${c.badge}`}>
+                          {meta.label}
+                        </span>
+                        <svg className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </summary>
+                      <div className="px-4 pb-4 border-t border-gray-100">
+                        <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap mt-3">
+                          {JSON.stringify(val, null, 2)}
+                        </pre>
+                      </div>
+                    </details>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -536,217 +765,6 @@ function LedgerTab({ userId }) {
 }
 
 // ============================================================
-// Rewards tab
-// ============================================================
-function RewardsTab({ userId }) {
-  const [patients, setPatients] = useState([])
-  const [loadingPatients, setLoadingPatients] = useState(false)
-  const [form, setForm] = useState({ patientId: '', amount: '', reason: '' })
-  const [submitting, setSubmitting] = useState(false)
-  const [history, setHistory] = useState([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [selectedPatient, setSelectedPatient] = useState('')
-
-  useEffect(() => { loadPatients() }, [])
-
-  const loadPatients = async () => {
-    setLoadingPatients(true)
-    try {
-      const res = await getMyPatients({ userId })
-      const raw = res.data?.data
-      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
-      setPatients(data)
-    } catch { toast.error('Lỗi tải danh sách bệnh nhân') }
-    finally { setLoadingPatients(false) }
-  }
-
-  const loadHistory = async (patientId) => {
-    if (!patientId) return
-    setLoadingHistory(true)
-    try {
-      const res = await getRewardsByPatient({ userId, patientId })
-      const raw = res.data?.data
-      setHistory(Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []))
-    } catch { setHistory([]) }
-    finally { setLoadingHistory(false) }
-  }
-
-  const handlePatientChange = (patientId) => {
-    setForm(f => ({ ...f, patientId, reason: '' }))
-    setSelectedPatient(patientId)
-    setHistory([])
-    if (patientId) loadHistory(patientId)
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!form.patientId || !form.amount || !form.reason) return
-    setSubmitting(true)
-    try {
-      const res = await issueReward({ userId, patientId: form.patientId, amount: Number(form.amount), reason: form.reason })
-      if (res.data.success || res.data.data) {
-        toast.success(`Đã phát thưởng ${Number(form.amount).toLocaleString('vi-VN')} điểm cho ${form.patientId}!`)
-        setForm(f => ({ ...f, amount: '', reason: '' }))
-        loadHistory(form.patientId)
-      } else {
-        toast.error(res.data.error || 'Thất bại')
-      }
-    } catch (err) { toast.error(err.response?.data?.error || 'Lỗi') }
-    finally { setSubmitting(false) }
-  }
-
-  const reasonPresets = [
-    'Đồng ý chia sẻ dữ liệu nghiên cứu',
-    'Tham gia chương trình khám định kỳ',
-    'Hoàn thành hồ sơ sức khỏe',
-    'Giới thiệu bệnh nhân mới',
-  ]
-
-  return (
-    <div className="space-y-6">
-      {/* Issue reward form */}
-      <div className="card max-w-xl">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <FiGift className="text-purple-500" /> Phát phần thưởng
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Patient selector */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Bệnh nhân *</label>
-            <select
-              value={form.patientId}
-              onChange={(e) => handlePatientChange(e.target.value)}
-              className="input-field"
-              required
-              disabled={loadingPatients}
-            >
-              <option value="">{loadingPatients ? 'Đang tải...' : '-- Chọn bệnh nhân --'}</option>
-              {patients.map((p, i) => (
-                <option key={i} value={p.patientId || p}>
-                  {p.name ? `${p.patientId} — ${p.name}` : (p.patientId || p)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Amount */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Số điểm thưởng *</label>
-            <input
-              type="number"
-              min="1"
-              value={form.amount}
-              onChange={(e) => setForm(f => ({ ...f, amount: e.target.value }))}
-              className="input-field"
-              placeholder="VD: 100"
-              required
-            />
-          </div>
-
-          {/* Reason */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Lý do *</label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {reasonPresets.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setForm(f => ({ ...f, reason: r }))}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                    form.reason === r
-                      ? 'bg-purple-100 border-purple-300 text-purple-700'
-                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-purple-200'
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            <input
-              type="text"
-              value={form.reason}
-              onChange={(e) => setForm(f => ({ ...f, reason: e.target.value }))}
-              className="input-field"
-              placeholder="Hoặc nhập lý do..."
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting || !form.patientId || !form.amount || !form.reason}
-            className="btn-primary flex items-center gap-2"
-          >
-            {submitting
-              ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              : <FiPlus />
-            }
-            Phát thưởng
-          </button>
-        </form>
-      </div>
-
-      {/* Reward history for selected patient */}
-      {selectedPatient && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <FiStar className="text-purple-500" />
-              Lịch sử phần thưởng — <span className="font-mono text-sm">{selectedPatient}</span>
-            </h3>
-            <button onClick={() => loadHistory(selectedPatient)} disabled={loadingHistory} className="btn-secondary text-sm flex items-center gap-1">
-              <FiRefreshCw className={loadingHistory ? 'animate-spin' : ''} /> Tải lại
-            </button>
-          </div>
-
-          {loadingHistory ? (
-            <div className="flex items-center justify-center h-24">
-              <div className="w-6 h-6 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
-            </div>
-          ) : history.length === 0 ? (
-            <div className="card text-center py-8">
-              <FiGift className="text-3xl text-gray-300 mx-auto mb-2" />
-              <p className="text-gray-400 text-sm">Chưa có phần thưởng nào</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {history.map((r, i) => {
-                const val = r.Value || r
-                const claimed = val.status === 'claimed'
-                return (
-                  <div key={i} className="card flex items-center gap-4 py-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${claimed ? 'bg-gray-100' : 'bg-purple-100'}`}>
-                      {claimed ? <FiCheck className="text-gray-400" /> : <FiGift className="text-purple-600" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900">+{Number(val.amount).toLocaleString('vi-VN')} điểm</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${claimed ? 'bg-gray-100 text-gray-500' : 'bg-purple-100 text-purple-700'}`}>
-                          {claimed ? 'Đã nhận' : 'Chưa nhận'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{val.reason}</p>
-                      {val.timestamp && (
-                        <p className="text-xs text-gray-300 mt-0.5">{new Date(val.timestamp).toLocaleString('vi-VN')}</p>
-                      )}
-                    </div>
-                    {claimed && val.claimedAt && (
-                      <p className="text-xs text-gray-400 flex-shrink-0">
-                        Nhận: {new Date(val.claimedAt).toLocaleDateString('vi-VN')}
-                      </p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ============================================================
 // VIEW: Bệnh viện (hospital role) — chỉ hiện bác sĩ của bệnh viện mình
 // ============================================================
 function HospitalView({ user }) {
@@ -754,7 +772,7 @@ function HospitalView({ user }) {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ doctorId: '', name: '', city: '' })
+  const [form, setForm] = useState({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => { loadDoctors() }, [])
@@ -777,16 +795,23 @@ function HospitalView({ user }) {
     e.preventDefault()
     setSubmitting(true)
     try {
+      const normalized = form.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim().replace(/\s+/g, '')
+      const doctorId = `D-${normalized.slice(0, 10)}-${Date.now().toString(36).slice(-4)}`
       const res = await onboardDoctor({
         hospitalUserId: user.userId,
         hospitalId: user.userId,
-        doctorId: form.doctorId,
+        doctorId,
         name: form.name,
         city: form.city,
+        dob: form.dob,
+        department: form.department,
+        position: form.position,
+        specialization: form.specialization,
+        phone: form.phone,
       })
       if (res.data.success || res.data.message) {
-        toast.success(`Đã thêm bác sĩ ${form.name}!`)
-        setForm({ doctorId: '', name: '', city: '' })
+        toast.success(`Đã thêm bác sĩ ${form.name} — ID: ${doctorId}`, { autoClose: false })
+        setForm({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
         setShowForm(false)
         loadDoctors()
       } else {
@@ -807,7 +832,7 @@ function HospitalView({ user }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Bệnh viện</h1>
-        <p className="text-gray-500 mt-1">{user.userId} — Danh sách bác sĩ</p>
+        <p className="text-gray-500 mt-1">{user.name || user.userId} — Danh sách bác sĩ</p>
       </div>
 
       <div className="card bg-gradient-to-r from-cyan-500 to-cyan-700 text-white">
@@ -843,38 +868,40 @@ function HospitalView({ user }) {
             <FiActivity className="text-purple-600" /> Thêm bác sĩ mới
           </h3>
           <form onSubmit={handleAdd} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Doctor ID *</label>
-                <input
-                  type="text"
-                  value={form.doctorId}
-                  onChange={(e) => setForm(f => ({ ...f, doctorId: e.target.value }))}
-                  className="input-field"
-                  placeholder="VD: Doctor02"
-                  required
-                />
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên *</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
-                  className="input-field"
-                  placeholder="VD: Nguyễn Văn B"
-                  required
-                />
+                <input type="text" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} className="input-field" placeholder="VD: Nguyễn Văn B" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ngày sinh</label>
+                <input type="date" value={form.dob} onChange={(e) => setForm(f => ({ ...f, dob: e.target.value }))} className="input-field" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
+                <input type="tel" value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} className="input-field" placeholder="VD: 0912345678" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Khoa</label>
+                <select value={form.department} onChange={(e) => setForm(f => ({ ...f, department: e.target.value }))} className="input-field">
+                  <option value="">-- Chọn khoa --</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chức vụ</label>
+                <select value={form.position} onChange={(e) => setForm(f => ({ ...f, position: e.target.value }))} className="input-field">
+                  <option value="">-- Chọn chức vụ --</option>
+                  {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chuyên khoa</label>
+                <input type="text" value={form.specialization} onChange={(e) => setForm(f => ({ ...f, specialization: e.target.value }))} className="input-field" placeholder="VD: Phẫu thuật tim" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
-                <input
-                  type="text"
-                  value={form.city}
-                  onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))}
-                  className="input-field"
-                  placeholder="VD: TP. Hồ Chí Minh"
-                />
+                <input type="text" value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: TP. Hồ Chí Minh" />
               </div>
             </div>
             <div className="flex gap-2 pt-1">
@@ -925,22 +952,16 @@ function HospitalView({ user }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-900 truncate">{doc.name || doc.doctorId}</p>
-                    <p className="text-xs text-gray-400 font-mono">{doc.doctorId}</p>
-                    {doc.specialization && (
-                      <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
-                        {doc.specialization}
-                      </span>
-                    )}
-                    {doc.city && (
-                      <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                        <FiMapPin className="text-xs" />{doc.city}
-                      </p>
-                    )}
-                    {doc.timestamp && (
-                      <p className="text-xs text-gray-300 mt-0.5">
-                        Tham gia: {new Date(doc.timestamp).toLocaleDateString('vi-VN')}
-                      </p>
-                    )}
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {doc.position && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{doc.position}</span>}
+                      {doc.department && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{doc.department}</span>}
+                      {doc.specialization && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{doc.specialization}</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
+                      {doc.phone && <span>{doc.phone}</span>}
+                      {doc.city && <span className="flex items-center gap-0.5"><FiMapPin className="text-[10px]" />{doc.city}</span>}
+                      {doc.dob && <span>NS: {doc.dob}</span>}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -957,47 +978,26 @@ function HospitalView({ user }) {
 // ============================================================
 export default function AdminLedger() {
   const { user } = useAuth()
-  const [tab, setTab] = useState('hospitals')
+  const location = useLocation()
 
-  if (user.role === 'hospital' && user.userId !== 'hospitalAdmin') {
+  const isHospitalAdmin = ['hospitalAdmin', 'hospital3Admin'].includes(user.userId)
+  if (user.role === 'hospital' && !isHospitalAdmin) {
     return <HospitalView user={user} />
   }
 
-  const tabs = [
-    { id: 'hospitals', label: 'Bệnh viện & Bác sĩ', icon: FiUsers },
-    { id: 'rewards',   label: 'Phần thưởng',         icon: FiGift },
-    { id: 'ledger',    label: 'Sổ cái Blockchain',   icon: FiDatabase },
-  ]
+  const tab = location.pathname.includes('/admin/ledger') ? 'ledger' : 'doctors'
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Quản trị hệ thống</h1>
-        <p className="text-gray-500 mt-1">{user.userId} — Quản lý bệnh viện, bác sĩ và sổ cái blockchain</p>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {tab === 'doctors' ? 'Quản lý bác sĩ' : 'Sổ cái Blockchain'}
+        </h1>
+        <p className="text-gray-500 mt-1">{user.name || user.userId} — {tab === 'doctors' ? 'Quản lý bác sĩ trong hệ thống' : 'Toàn bộ dữ liệu trên Hyperledger Fabric'}</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.id
-                ? 'border-primary-500 text-primary-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <t.icon className="text-xs" />
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'hospitals' && <HospitalsTab userId={user.userId} />}
-      {tab === 'rewards'   && <RewardsTab   userId={user.userId} />}
-      {tab === 'ledger'    && <LedgerTab    userId={user.userId} />}
+      {tab === 'doctors' && <DoctorsTab userId={user.userId} />}
+      {tab === 'ledger'  && <LedgerTab  userId={user.userId} />}
     </div>
   )
 }

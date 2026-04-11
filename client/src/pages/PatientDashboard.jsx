@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getAllRecordsByPatientId, getPrescriptionsByPatient, getClaimsByPatient, getRewardsByPatient, getPatientById } from '../services/api'
-import { FiFileText, FiActivity, FiDollarSign, FiGift, FiClock, FiUser, FiShield, FiPackage, FiCheckCircle } from 'react-icons/fi'
+import { getAllRecordsByPatientId, getPrescriptionsByPatient, getClaimsByPatient, getPatientById } from '../services/api'
+import { FiFileText, FiActivity, FiDollarSign, FiClock, FiUser, FiShield, FiPackage, FiCheckCircle } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 
 export default function PatientDashboard() {
   const { user } = useAuth()
-  const [stats, setStats] = useState({ records: 0, prescriptions: 0, claims: 0, rewards: 0 })
+  const [stats, setStats] = useState({ records: 0, prescriptions: 0, claims: 0 })
+  const [patientName, setPatientName] = useState('')
   const [recentRecords, setRecentRecords] = useState([])
   const [authorizedDoctors, setAuthorizedDoctors] = useState([])
   const [loading, setLoading] = useState(true)
@@ -17,11 +18,10 @@ export default function PatientDashboard() {
 
   const loadDashboard = async () => {
     try {
-      const [recordsRes, prescRes, claimsRes, rewardsRes, patientRes] = await Promise.allSettled([
+      const [recordsRes, prescRes, claimsRes, patientRes] = await Promise.allSettled([
         getAllRecordsByPatientId({ userId: user.userId, patientId: user.userId }),
         getPrescriptionsByPatient({ userId: user.userId, patientId: user.userId }),
         getClaimsByPatient({ userId: user.userId, patientId: user.userId }),
-        getRewardsByPatient({ userId: user.userId, patientId: user.userId }),
         getPatientById({ userId: user.userId, patientId: user.userId }),
       ])
 
@@ -34,18 +34,17 @@ export default function PatientDashboard() {
       const records = recordsRes.status === 'fulfilled' ? parseData(recordsRes.value.data.data, []) : []
       const prescriptions = prescRes.status === 'fulfilled' ? parseData(prescRes.value.data.data, []) : []
       const claims = claimsRes.status === 'fulfilled' ? parseData(claimsRes.value.data.data, []) : []
-      const rewards = rewardsRes.status === 'fulfilled' ? parseData(rewardsRes.value.data.data, []) : []
 
       if (patientRes.status === 'fulfilled') {
         const patientData = parseData(patientRes.value.data.data, {})
         setAuthorizedDoctors(patientData.authorizedDoctors || [])
+        setPatientName(patientData.name || '')
       }
 
       setStats({
         records: records.length,
         prescriptions: prescriptions.length,
         claims: claims.length,
-        rewards: rewards.length,
       })
       setRecentRecords(records.slice(-5).reverse())
     } catch {
@@ -59,7 +58,6 @@ export default function PatientDashboard() {
     { label: 'Hồ sơ bệnh án', value: stats.records, icon: FiFileText, color: 'blue', to: '/records' },
     { label: 'Đơn thuốc', value: stats.prescriptions, icon: FiActivity, color: 'green', to: '/prescriptions' },
     { label: 'Yêu cầu bảo hiểm', value: stats.claims, icon: FiDollarSign, color: 'yellow', to: '/insurance' },
-    { label: 'Phần thưởng', value: stats.rewards, icon: FiGift, color: 'purple', to: '/rewards' },
   ]
 
   const colorMap = {
@@ -80,7 +78,7 @@ export default function PatientDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Xin chào, {user.userId}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Xin chào, {patientName || user.userId}</h1>
         <p className="text-gray-500 mt-1">Tổng quan hồ sơ sức khỏe của bạn</p>
       </div>
 

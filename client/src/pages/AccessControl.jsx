@@ -1,44 +1,66 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { grantAccess, revokeAccess, getPatientById } from '../services/api'
+import { grantAccess, revokeAccess, getPatientById, getAllDoctors } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiShield, FiUserCheck, FiUserX, FiUser, FiRefreshCw } from 'react-icons/fi'
+import { FiShield, FiUserCheck, FiUserX, FiUser, FiRefreshCw, FiSearch, FiActivity, FiMapPin } from 'react-icons/fi'
 
 export default function AccessControl() {
   const { user } = useAuth()
-  const [doctorId, setDoctorId] = useState('')
+  const [selectedDoctorId, setSelectedDoctorId] = useState('')
+  const [searchName, setSearchName] = useState('')
   const [loading, setLoading] = useState(false)
   const [authorizedDoctors, setAuthorizedDoctors] = useState([])
-  const [loadingDoctors, setLoadingDoctors] = useState(false)
+  const [allDoctors, setAllDoctors] = useState([])
+  const [loadingData, setLoadingData] = useState(true)
 
-  useEffect(() => {
-    loadAuthorizedDoctors()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
-  const loadAuthorizedDoctors = async () => {
-    setLoadingDoctors(true)
+  const loadData = async () => {
+    setLoadingData(true)
     try {
-      const res = await getPatientById({ userId: user.userId, patientId: user.userId })
-      const raw = res.data.data
-      const patientData = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
-      setAuthorizedDoctors(patientData.authorizedDoctors || [])
-    } catch (err) {
-      console.error('loadAuthorizedDoctors error:', err?.response?.data || err?.message)
-      toast.error('Không tải được danh sách bác sĩ')
+      const [patientRes, doctorsRes] = await Promise.allSettled([
+        getPatientById({ userId: user.userId, patientId: user.userId }),
+        getAllDoctors({ userId: user.userId, hospitalId: '' }),
+      ])
+
+      if (patientRes.status === 'fulfilled') {
+        const raw = patientRes.value.data.data
+        const patientData = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
+        setAuthorizedDoctors(patientData.authorizedDoctors || [])
+      }
+
+      if (doctorsRes.status === 'fulfilled') {
+        const raw = doctorsRes.value.data.data
+        setAllDoctors(Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []))
+      }
+    } catch {
+      toast.error('Không tải được dữ liệu')
     } finally {
-      setLoadingDoctors(false)
+      setLoadingData(false)
     }
   }
 
-  const handleGrant = async () => {
-    if (!doctorId.trim()) return toast.error('Vui lòng nhập Doctor ID')
+  // Doctors chua duoc cap quyen, loc theo ten
+  const availableDoctors = allDoctors.filter(d =>
+    !authorizedDoctors.includes(d.doctorId) &&
+    (!searchName || (d.name || d.doctorId).toLowerCase().includes(searchName.toLowerCase()))
+  )
+
+  // Doctor info tu ID
+  const getDoctorName = (id) => {
+    const doc = allDoctors.find(d => d.doctorId === id)
+    return doc?.name || id
+  }
+
+  const handleGrant = async (doctorId) => {
     setLoading(true)
     try {
       const res = await grantAccess({ userId: user.userId, patientId: user.userId, doctorIdToGrant: doctorId })
       if (res.data.success || res.data.data) {
-        toast.success(`Đã cấp quyền cho bác sĩ ${doctorId}`)
-        setDoctorId('')
-        loadAuthorizedDoctors()
+        toast.success(`Đã cấp quyền cho ${getDoctorName(doctorId)}`)
+        setSelectedDoctorId('')
+        setSearchName('')
+        loadData()
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
@@ -49,15 +71,13 @@ export default function AccessControl() {
     }
   }
 
-  const handleRevoke = async () => {
-    if (!doctorId.trim()) return toast.error('Vui lòng nhập Doctor ID')
+  const handleRevoke = async (doctorId) => {
     setLoading(true)
     try {
       const res = await revokeAccess({ userId: user.userId, patientId: user.userId, doctorIdToRevoke: doctorId })
       if (res.data.success || res.data.data) {
-        toast.success(`Đã thu hồi quyền của bác sĩ ${doctorId}`)
-        setDoctorId('')
-        loadAuthorizedDoctors()
+        toast.success(`Đã thu hồi quyền của ${getDoctorName(doctorId)}`)
+        loadData()
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
@@ -68,21 +88,12 @@ export default function AccessControl() {
     }
   }
 
-  const handleRevokeById = async (id) => {
-    setLoading(true)
-    try {
-      const res = await revokeAccess({ userId: user.userId, patientId: user.userId, doctorIdToRevoke: id })
-      if (res.data.success || res.data.data) {
-        toast.success(`Đã thu hồi quyền của bác sĩ ${id}`)
-        loadAuthorizedDoctors()
-      } else {
-        toast.error(res.data.error || 'Thất bại')
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Lỗi kết nối')
-    } finally {
-      setLoading(false)
-    }
+  if (loadingData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+      </div>
+    )
   }
 
   return (
@@ -92,64 +103,115 @@ export default function AccessControl() {
         <p className="text-gray-500 mt-1">Cấp hoặc thu hồi quyền truy cập hồ sơ cho bác sĩ</p>
       </div>
 
-      <div className="card max-w-lg">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-            <FiShield className="text-primary-600 text-xl" />
+      {/* Authorized doctors */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <FiUserCheck className="text-green-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900">Bác sĩ đã được cấp quyền</h2>
+              <p className="text-xs text-gray-400">{authorizedDoctors.length} bác sĩ</p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">Phân quyền bác sĩ</h2>
-            <p className="text-sm text-gray-500">Chỉ bác sĩ được cấp quyền mới có thể xem hồ sơ của bạn</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Doctor ID</label>
-            <input
-              type="text"
-              value={doctorId}
-              onChange={(e) => setDoctorId(e.target.value)}
-              className="input-field"
-              placeholder="Nhập ID bác sĩ"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={handleGrant} disabled={loading} className="btn-success flex-1 flex items-center justify-center gap-2">
-              <FiUserCheck /> Cấp quyền
-            </button>
-            <button onClick={handleRevoke} disabled={loading} className="btn-danger flex-1 flex items-center justify-center gap-2">
-              <FiUserX /> Thu hồi
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Authorized doctors list */}
-      <div className="card max-w-lg">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-gray-900">Bác sĩ đã được cấp quyền</h3>
-          <button onClick={loadAuthorizedDoctors} disabled={loadingDoctors} className="text-gray-400 hover:text-gray-600">
-            <FiRefreshCw className={`text-sm ${loadingDoctors ? 'animate-spin' : ''}`} />
+          <button onClick={loadData} className="text-gray-400 hover:text-gray-600">
+            <FiRefreshCw className="text-sm" />
           </button>
         </div>
+
         {authorizedDoctors.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">Chưa cấp quyền cho bác sĩ nào</p>
+          <p className="text-sm text-gray-400 text-center py-6">Chưa cấp quyền cho bác sĩ nào</p>
         ) : (
           <div className="space-y-2">
-            {authorizedDoctors.map((id) => (
-              <div key={id} className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
-                <div className="flex items-center gap-2">
-                  <FiUser className="text-blue-500 text-sm" />
-                  <span className="text-sm font-medium text-blue-700">{id}</span>
+            {authorizedDoctors.map((id) => {
+              const doc = allDoctors.find(d => d.doctorId === id)
+              return (
+                <div key={id} className="flex items-center justify-between px-4 py-3 bg-green-50 rounded-xl border border-green-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
+                      <FiActivity className="text-green-600 text-sm" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{doc?.name || id}</p>
+                      <p className="text-xs text-gray-400 font-mono">{id}</p>
+                    </div>
+                    {doc?.city && (
+                      <span className="text-xs text-gray-400 flex items-center gap-1">
+                        <FiMapPin className="text-[10px]" />{doc.city}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleRevoke(id)}
+                    disabled={loading}
+                    className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                  >
+                    <FiUserX className="text-xs" /> Thu hồi
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Grant access - chon bac si */}
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+            <FiShield className="text-primary-600" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900">Cấp quyền cho bác sĩ</h2>
+            <p className="text-xs text-gray-400">Tìm và chọn bác sĩ để cấp quyền xem hồ sơ</p>
+          </div>
+        </div>
+
+        <div className="relative mb-3">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchName}
+            onChange={(e) => setSearchName(e.target.value)}
+            className="input-field pl-10"
+            placeholder="Tìm bác sĩ theo tên..."
+          />
+        </div>
+
+        {availableDoctors.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            {searchName ? 'Không tìm thấy bác sĩ' : allDoctors.length === 0 ? 'Chưa có bác sĩ nào trong hệ thống' : 'Tất cả bác sĩ đã được cấp quyền'}
+          </p>
+        ) : (
+          <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100">
+            {availableDoctors.map((doc, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-purple-50 rounded-lg flex items-center justify-center">
+                    <FiActivity className="text-purple-600 text-sm" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{doc.name || doc.doctorId}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <span className="font-mono">{doc.doctorId}</span>
+                      {doc.city && (
+                        <span className="flex items-center gap-0.5">
+                          <FiMapPin className="text-[10px]" />{doc.city}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <button
-                  onClick={() => handleRevokeById(id)}
+                  onClick={() => handleGrant(doc.doctorId)}
                   disabled={loading}
-                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                  className="btn-success text-xs py-1.5 px-3 flex items-center gap-1"
                 >
-                  <FiUserX className="text-xs" /> Thu hồi
+                  <FiUserCheck className="text-xs" /> Cấp quyền
                 </button>
               </div>
             ))}
@@ -158,7 +220,7 @@ export default function AccessControl() {
       </div>
 
       {/* Info */}
-      <div className="card max-w-lg bg-blue-50 border-blue-100">
+      <div className="card bg-blue-50 border-blue-100">
         <h3 className="font-medium text-blue-900 mb-2">Lưu ý về quyền truy cập</h3>
         <ul className="text-sm text-blue-700 space-y-1">
           <li>- Mọi thao tác cấp/thu hồi quyền đều được ghi lại trên blockchain</li>

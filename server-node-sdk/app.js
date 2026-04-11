@@ -49,20 +49,19 @@ app.get('/status', async function (req, res, next) {
 
 app.post('/registerPatient', async function (req, res, next) {
     try {
-        let {adminId, userId, name, dob, city} = req.body;
+        let {adminId, userId, name, dob, city, orgId} = req.body;
 
         console.log("Received request:", req.body);
         if (!userId) {
             throw new Error("Missing input data. Please enter userId.");
         }
-        adminId = adminId || 'hospitalAdmin';
-        // submitterId = identity dung de submit chaincode transaction
-        const submitterId = req.body.submitterId || 'Hospital01';
+        adminId = adminId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
+        const submitterId = req.body.submitterId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
 
         const result = await helper.registerUser(adminId, submitterId, userId, 'patient', {
             chaincodeFcn: 'onboardPatient',
             patientId: userId, name, dob, city
-        });
+        }, {}, orgId || null);
         console.log("Result from user registration function:", result);
         res.status(200).send(result);
     } catch (error) {
@@ -76,18 +75,16 @@ app.post('/registerPatient', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardHospital', async function (req, res, next) {
     try {
-        const {adminId, hospitalId, name, city} = req.body;
+        const {adminId, hospitalId, name, city, orgId} = req.body;
         if (!hospitalId || !name) {
             throw new Error("Missing hospitalId or name");
         }
-        // Dang ky identity voi CA (role=hospital, hospitalId=chinh no)
+        const admin = adminId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
         const result = await helper.registerUser(
-            adminId || 'hospitalAdmin',
-            adminId || 'hospitalAdmin',
-            hospitalId,
-            'hospital',
+            admin, admin, hospitalId, 'hospital',
             { chaincodeFcn: 'onboardHospital', hospitalId, name, city },
-            { hospitalId: hospitalId }
+            { hospitalId: hospitalId },
+            orgId || null
         );
         res.status(200).send(result);
     } catch (error) {
@@ -100,19 +97,16 @@ app.post('/onboardHospital', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardDoctor', async function (req, res, next) {
     try {
-        const {hospitalUserId, doctorId, name, city} = req.body;
+        const {hospitalUserId, doctorId, name, city, dob, department, position, specialization, phone, orgId} = req.body;
         if (!doctorId || !name) {
             throw new Error("Missing doctorId or name");
         }
-        const hospitalUser = hospitalUserId || 'Hospital01';
-        // Dang ky identity voi CA (role=doctor, hospitalId tu hospital)
+        const admin = orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin';
         const result = await helper.registerUser(
-            'hospitalAdmin',
-            hospitalUser,
-            doctorId,
-            'doctor',
-            { chaincodeFcn: 'onboardDoctor', doctorId, name, city },
-            { hospitalId: req.body.hospitalId || hospitalUser }
+            admin, admin, doctorId, 'doctor',
+            { chaincodeFcn: 'onboardDoctor', doctorId, name, city, dob, department, position, specialization, phone },
+            { hospitalId: req.body.hospitalId || admin },
+            orgId || null
         );
         res.status(200).send(result);
     } catch (error) {
@@ -125,18 +119,16 @@ app.post('/onboardDoctor', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardPharmacy', async function (req, res, next) {
     try {
-        const {hospitalUserId, pharmacyId, name, city} = req.body;
+        const {hospitalUserId, pharmacyId, name, city, orgId} = req.body;
         if (!pharmacyId || !name) {
             throw new Error("Missing pharmacyId or name");
         }
-        const hospitalUser = hospitalUserId || 'Hospital01';
+        const admin = orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin';
         const result = await helper.registerUser(
-            'hospitalAdmin',
-            hospitalUser,
-            pharmacyId,
-            'pharmacy',
+            admin, admin, pharmacyId, 'pharmacy',
             { chaincodeFcn: 'onboardPharmacy', pharmacyId, name, city },
-            { hospitalId: req.body.hospitalId || hospitalUser }
+            { hospitalId: req.body.hospitalId || admin },
+            orgId || null
         );
         res.status(200).send(result);
     } catch (error) {
@@ -281,7 +273,7 @@ app.post('/addRecord', async function (req, res, next){
         const presObj = typeof prescription === 'string' ? JSON.parse(prescription) : prescription;
         const result = await invoke.invokeTransaction('addRecord', {patientId, diagnosis: diagObj, prescription: presObj}, userId);
               
-        res.send({sucess:true, data: result})
+        res.send({success:true, data: result})
                 
     } catch (error) {       
         next(error);
@@ -567,54 +559,6 @@ app.post('/getAllClaims', async function (req, res, next){
 });
 
 // ===========================================================================================
-// RESEARCHER MODULE - Nghien cuu y te
-// ===========================================================================================
-
-// Dang ky nha nghien cuu (hospital admin)
-app.post('/onboardResearcher', async function (req, res, next){
-    try {
-        const {userId, researcherId, name, institution, field} = req.body;
-        const result = await invoke.invokeTransaction('onboardResearcher', {researcherId, name, institution, field}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Nha nghien cuu gui yeu cau consent
-app.post('/requestConsent', async function (req, res, next){
-    try {
-        const {userId, researcherId, patientId, purpose} = req.body;
-        const result = await invoke.invokeTransaction('requestConsent', {researcherId, patientId, purpose}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Benh nhan duyet/tu choi consent
-app.post('/approveConsent', async function (req, res, next){
-    try {
-        const {userId, patientId, requestId, approved} = req.body;
-        const result = await invoke.invokeTransaction('approveConsent', {patientId, requestId, approved}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Nha nghien cuu lay du lieu an danh
-app.post('/getAnonymizedData', async function (req, res, next){
-    try {
-        const {userId, researcherId, patientId} = req.body;
-        const result = await query.getQuery('getAnonymizedData', {researcherId, patientId}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// ===========================================================================================
 // EMERGENCY ACCESS - Truy cap khan cap
 // ===========================================================================================
 
@@ -641,46 +585,20 @@ app.post('/getEmergencyLogs', async function (req, res, next){
 });
 
 // ===========================================================================================
-// REWARD SYSTEM - He thong thuong
-// ===========================================================================================
-
-// Cap thuong cho benh nhan
-app.post('/issueReward', async function (req, res, next){
-    try {
-        const {userId, patientId, amount, reason} = req.body;
-        const result = await invoke.invokeTransaction('issueReward', {patientId, amount, reason}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Benh nhan nhan thuong
-app.post('/claimReward', async function (req, res, next){
-    try {
-        const {userId, patientId, rewardId} = req.body;
-        const result = await invoke.invokeTransaction('claimReward', {patientId, rewardId}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Xem tat ca reward cua benh nhan
-app.post('/getRewardsByPatient', async function (req, res, next){
-    try {
-        const {userId, patientId} = req.body;
-        const result = await query.getQuery('getRewardsByPatient', {patientId}, userId);
-        res.status(200).send({ success: true, data: result});
-    } catch (error) {
-        next(error);
-    }
-});
-
-// ===========================================================================================
 // ERROR HANDLER
 // ===========================================================================================
 app.use((err, req, res, next) => {
     console.error("Error:", err.message);
-    res.status(400).json({ success: false, error: err.message });
+
+    let statusCode = 500;
+    const msg = err.message || 'Internal server error';
+
+    if (msg.includes('not found') || msg.includes('not exist') || msg.includes('Not found')) {
+        statusCode = 404;
+    } else if (msg.includes('Missing') || msg.includes('Invalid') || msg.includes('Only ')
+        || msg.includes('already') || msg.includes('Caller is not') || msg.includes('not authorized')) {
+        statusCode = 400;
+    }
+
+    res.status(statusCode).json({ success: false, error: msg });
 })

@@ -9,9 +9,7 @@ import PatientRecords from './pages/PatientRecords'
 import AccessControl from './pages/AccessControl'
 import Prescriptions from './pages/Prescriptions'
 import InsuranceClaims from './pages/InsuranceClaims'
-import ResearchConsent from './pages/ResearchConsent'
 import EmergencyLogs from './pages/EmergencyLogs'
-import Rewards from './pages/Rewards'
 import AdminLedger from './pages/AdminLedger'
 
 function ProtectedRoute({ children, roles }) {
@@ -28,10 +26,10 @@ export default function App() {
     if (!user) return '/login'
     switch (user.role) {
       case 'doctor': return '/doctor'
-      case 'admin': case 'hospital': return '/admin/ledger'
+      case 'admin': case 'hospital': return '/admin/doctors'
       case 'pharmacy': return '/prescriptions'
-      case 'insuranceAdmin': case 'insurance': case 'agent': return '/insurance'
-      case 'researcher': return '/research'
+      case 'insuranceAdmin': case 'insurance': return '/insurance/agents'
+      case 'agent': return '/insurance/pending'
       default: return '/dashboard'
     }
   }
@@ -48,9 +46,9 @@ export default function App() {
         <Route path="/access" element={<ProtectedRoute roles={['patient']}><AccessControl /></ProtectedRoute>} />
         <Route path="/prescriptions" element={<Prescriptions />} />
         <Route path="/insurance" element={<InsuranceClaims />} />
-        <Route path="/research" element={<ResearchConsent />} />
+        <Route path="/insurance/:tab" element={<InsuranceClaims />} />
         <Route path="/emergency" element={<EmergencyLogs />} />
-        <Route path="/rewards" element={<ProtectedRoute roles={['patient']}><Rewards /></ProtectedRoute>} />
+        <Route path="/admin/doctors" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
         <Route path="/admin/ledger" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
       </Route>
 

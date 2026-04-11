@@ -54,7 +54,7 @@ async function main() {
             attrs: [
                 { name: 'role', value: 'doctor', ecert: true },
                 { name: 'uuid', value: 'Doctor01', ecert: true },
-                { name: 'hospitalId', value: 'Hospital01', ecert: true }
+                { name: 'hospitalId', value: 'hospitalAdmin', ecert: true }
             ],
         }, adminUser);
         const enrollment = await ca.enroll({
@@ -80,7 +80,7 @@ async function main() {
         // -----------------------Create Wallet with default balance on ledger------------------ 
                 // Create a new gateway for connecting to our peer node.
                 const gateway = new Gateway();
-                await gateway.connect(ccp, { wallet, identity: 'Hospital01', discovery: { enabled: true, asLocalhost: true } });
+                await gateway.connect(ccp, { wallet, identity: 'hospitalAdmin', discovery: { enabled: true, asLocalhost: true } });
         
                 // Get the network (channel) our contract is deployed to.
                 const network = await gateway.getNetwork('mychannel');

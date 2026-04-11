@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   createClaim, getClaimsByPatient, getAllClaims,
@@ -10,6 +11,7 @@ import {
   FiChevronDown, FiCheckCircle, FiXCircle, FiUser, FiFilter, FiMapPin, FiBriefcase,
   FiTrendingUp, FiAlertCircle, FiDatabase, FiRefreshCw, FiSearch, FiLayers,
 } from 'react-icons/fi'
+import BlockchainView, { ViewModeToggle } from '../components/BlockchainView'
 
 // ============================================================
 // Constants
@@ -206,11 +208,24 @@ function Org2EntryRow({ item, i }) {
 // ============================================================
 // Org2 Ledger tab
 // ============================================================
+const ORG2_TYPE_META = {
+  insurance: { label: 'Công ty BH',   color: 'yellow', icon: FiDollarSign },
+  agent:     { label: 'Chi nhánh BH', color: 'orange', icon: FiBriefcase },
+  claim:     { label: 'Yêu cầu BH',  color: 'blue',   icon: FiFileText },
+}
+const ORG2_COLOR_MAP = {
+  yellow: { badge: 'bg-yellow-100 text-yellow-700', icon: 'bg-yellow-100 text-yellow-600' },
+  orange: { badge: 'bg-orange-100 text-orange-700', icon: 'bg-orange-100 text-orange-600' },
+  blue:   { badge: 'bg-blue-100 text-blue-700',     icon: 'bg-blue-100 text-blue-600' },
+  gray:   { badge: 'bg-gray-100 text-gray-700',     icon: 'bg-gray-100 text-gray-600' },
+}
+
 function BlockchainTab({ userId }) {
   const [ledger, setLedger] = useState([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [activeType, setActiveType] = useState('all')
+  const [viewMode, setViewMode] = useState('list')
 
   const load = async () => {
     setLoading(true)
@@ -246,10 +261,15 @@ function BlockchainTab({ userId }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">Toàn bộ dữ liệu Org2 trên Hyperledger Fabric</p>
-        <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
-          <FiRefreshCw className={loading ? 'animate-spin' : ''} />
-          {ledger.length === 0 ? 'Tải blockchain' : 'Làm mới'}
-        </button>
+        <div className="flex gap-2">
+          {ledger.length > 0 && (
+            <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
+          )}
+          <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
+            <FiRefreshCw className={loading ? 'animate-spin' : ''} />
+            {ledger.length === 0 ? 'Tải blockchain' : 'Làm mới'}
+          </button>
+        </div>
       </div>
 
       {ledger.length > 0 && (
@@ -297,11 +317,16 @@ function BlockchainTab({ userId }) {
             />
           </div>
 
-          <p className="text-xs text-gray-400">Hiển thị {filtered.length} / {ledger.length} bản ghi</p>
-
-          <div className="space-y-2">
-            {filtered.map((item, i) => <Org2EntryRow key={i} item={item} i={i} />)}
-          </div>
+          {viewMode === 'blocks' ? (
+            <BlockchainView ledger={filtered} getDocType={getOrg2Type} typeMeta={ORG2_TYPE_META} colorMap={ORG2_COLOR_MAP} />
+          ) : (
+            <>
+              <p className="text-xs text-gray-400">Hiển thị {filtered.length} / {ledger.length} bản ghi</p>
+              <div className="space-y-2">
+                {filtered.map((item, i) => <Org2EntryRow key={i} item={item} i={i} />)}
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -318,8 +343,8 @@ function BlockchainTab({ userId }) {
 // ============================================================
 // VIEW: Công ty bảo hiểm (insuranceAdmin)
 // ============================================================
-function InsuranceAdminView({ user }) {
-  const [tab, setTab] = useState('agents')
+function InsuranceAdminView({ user, tab: urlTab }) {
+  const tab = urlTab === 'blockchain' ? 'blockchain' : 'agents'
   const [agents, setAgents] = useState([])
   const [loadingAgents, setLoadingAgents] = useState(false)
 
@@ -342,27 +367,10 @@ function InsuranceAdminView({ user }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Công ty bảo hiểm</h1>
-        <p className="text-gray-500 mt-1">{user.userId} — Quản lý chi nhánh và sổ cái</p>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        <button
-          onClick={() => setTab('agents')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'agents' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          <FiBriefcase className="text-xs" /> Chi nhánh
-          {agents.length > 0 && (
-            <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">{agents.length}</span>
-          )}
-        </button>
-        <button
-          onClick={() => setTab('blockchain')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'blockchain' ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          <FiDatabase className="text-xs" /> Sổ cái Blockchain
-        </button>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {tab === 'agents' ? 'Chi nhánh bảo hiểm' : 'Sổ cái Blockchain'}
+        </h1>
+        <p className="text-gray-500 mt-1">{user.name || user.userId} — {tab === 'agents' ? 'Quản lý chi nhánh thuộc công ty' : 'Toàn bộ dữ liệu Org2 trên Hyperledger Fabric'}</p>
       </div>
 
       {tab === 'agents' && (
@@ -422,8 +430,8 @@ function InsuranceAdminView({ user }) {
 // ============================================================
 // VIEW: Chi nhánh bảo hiểm (agent)
 // ============================================================
-function AgentView({ user }) {
-  const [tab, setTab] = useState('pending')
+function AgentView({ user, tab: urlTab }) {
+  const tab = ['pending', 'reviewed', 'search'].includes(urlTab) ? urlTab : 'pending'
   const [claims, setClaims] = useState([])
   const [loading, setLoading] = useState(true)
   const [reviewForm, setReviewForm] = useState(null)
@@ -498,9 +506,17 @@ function AgentView({ user }) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Chi nhánh bảo hiểm</h1>
-        <p className="text-gray-500 mt-1">{user.userId} — Xử lý yêu cầu bồi thường</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {tab === 'pending' ? 'Yêu cầu chờ xử lý' : tab === 'reviewed' ? 'Yêu cầu đã xử lý' : 'Tra cứu yêu cầu'}
+          </h1>
+          <p className="text-gray-500 mt-1">{user.name || user.userId} — Xử lý yêu cầu bồi thường</p>
+        </div>
+        <button onClick={loadAll} disabled={loading} className="btn-secondary flex items-center gap-2 text-sm">
+          {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" /> : <FiRefreshCw />}
+          Tải lại
+        </button>
       </div>
 
       {/* Stats */}
@@ -517,28 +533,6 @@ function AgentView({ user }) {
           <p className="text-2xl font-bold text-gray-600">{claims.length}</p>
           <p className="text-sm text-gray-500 mt-0.5">Tổng claims</p>
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {mainTabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? 'border-primary-500 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-                {t.id === 'search' && <FiSearch className="text-xs" />}
-            {t.label}
-            {t.count !== null && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${tab === t.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}>
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
-        <button onClick={loadAll} disabled={loading} className="ml-auto px-3 py-2 text-xs text-gray-400 hover:text-gray-600">
-          {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" /> : '↻ Tải lại'}
-        </button>
       </div>
 
       {/* Tab content */}
@@ -779,7 +773,8 @@ function PatientView({ user }) {
 // ============================================================
 export default function InsuranceClaims() {
   const { user } = useAuth()
-  if (user.role === 'insuranceAdmin' || user.role === 'insurance') return <InsuranceAdminView user={user} />
-  if (user.role === 'agent')          return <AgentView user={user} />
+  const { tab } = useParams()
+  if (user.role === 'insuranceAdmin' || user.role === 'insurance') return <InsuranceAdminView user={user} tab={tab} />
+  if (user.role === 'agent')          return <AgentView user={user} tab={tab} />
   return <PatientView user={user} />
 }

@@ -10,14 +10,16 @@ const { Wallets, Gateway } = require('fabric-network');
 // Ho tro them attribute: hospitalId, companyId
 // ===========================================================================================
 // Xac dinh Org tu role: insurance-related → Org2, con lai → Org1
-const getOrgFromRole = (userRole) => {
+// orgOverride cho phep chi dinh Org cu the (vd: Org3 cho benh vien moi)
+const getOrgFromRole = (userRole, orgOverride) => {
+    if (orgOverride) return orgOverride;
     const org2Roles = ['insuranceAdmin', 'agent'];
     if (org2Roles.includes(userRole)) return 'Org2';
     return 'Org1';
 };
 
-const registerUser = async (adminID, submitterId, userID, userRole, args, extraAttrs = {}) => {
-    const orgID = getOrgFromRole(userRole);
+const registerUser = async (adminID, submitterId, userID, userRole, args, extraAttrs = {}, orgId = null) => {
+    const orgID = getOrgFromRole(userRole, orgId);
 
     const ccpPath = path.resolve(__dirname, '..', 'fabric-samples','test-network', 'organizations', 'peerOrganizations', `${orgID}.example.com`.toLowerCase(), `connection-${orgID}.json`.toLowerCase());
     const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
@@ -66,12 +68,7 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
     // Check to see if we've already enrolled the admin user.
     const adminIdentity = await wallet.get(adminID);
     if (!adminIdentity) {
-        console.log(`An identity for the admin user ${adminID} does not exist in the wallet.`);
-        console.log('Run the enrollAdmin.js application before retrying.');
-        return {
-            statusCode: 200,
-            message: `An identity for the admin user does not exist in the wallet`
-        };
+        throw new Error(`Admin identity '${adminID}' not found in wallet. Run enrollAdmin.js first.`);
     }
 
     // build a user object for authenticating with the CA
@@ -162,9 +159,11 @@ const getRoleFromCert = (certPem) => {
 };
 
 // Fallback: derive role from userId for CA-enrolled admins that have no cert attrs
+// (wallet cu hoac insuranceAdmin van dung CA bootstrap truc tiep)
 const deriveRoleFromUserId = (userId) => {
     const map = {
         hospitalAdmin: 'hospital',
+        hospital3Admin: 'hospital',
         insuranceAdmin: 'insurance',
     };
     return map[userId] || null;

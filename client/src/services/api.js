@@ -35,20 +35,9 @@ export const approveClaim = (data) => api.post('/approveClaim', data)
 export const rejectClaim = (data) => api.post('/rejectClaim', data)
 export const getAllClaims = (data) => api.post('/getAllClaims', data)
 
-// Research
-export const onboardResearcher = (data) => api.post('/onboardResearcher', data)
-export const requestConsent = (data) => api.post('/requestConsent', data)
-export const approveConsent = (data) => api.post('/approveConsent', data)
-export const getAnonymizedData = (data) => api.post('/getAnonymizedData', data)
-
 // Emergency
 export const emergencyAccess = (data) => api.post('/emergencyAccess', data)
 export const getEmergencyLogs = (data) => api.post('/getEmergencyLogs', data)
-
-// Rewards
-export const issueReward = (data) => api.post('/issueReward', data)
-export const claimReward = (data) => api.post('/claimReward', data)
-export const getRewardsByPatient = (data) => api.post('/getRewardsByPatient', data)
 
 // Admin
 export const fetchLedger = (data) => api.post('/fetchLedger', data)
