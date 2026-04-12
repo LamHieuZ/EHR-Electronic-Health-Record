@@ -57,14 +57,14 @@ function DoctorView({ user }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Truy cập khẩn cấp</h1>
-        <p className="text-gray-500 mt-1">Chỉ sử dụng trong tình huống cấp cứu — mọi truy cập đều được ghi lại</p>
+        <h1 className="text-lg font-bold text-gray-900">Truy cập khẩn cấp</h1>
+        <p className="text-gray-500 mt-0.5">Chỉ sử dụng trong tình huống cấp cứu — mọi truy cập đều được ghi lại</p>
       </div>
 
       {/* Warning */}
-      <div className="rounded-xl bg-red-50 border border-red-200 p-4 flex items-start gap-3">
+      <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex items-start gap-3">
         <FiAlertTriangle className="text-red-600 text-xl flex-shrink-0 mt-0.5" />
         <div className="text-sm text-red-800">
           <p className="font-semibold">Cảnh báo sử dụng trái phép</p>
@@ -72,7 +72,7 @@ function DoctorView({ user }) {
         </div>
       </div>
 
-      <form onSubmit={handleAccess} className="card max-w-xl space-y-4">
+      <form onSubmit={handleAccess} className="card max-w-xl space-y-3">
         <h2 className="font-semibold text-gray-900 flex items-center gap-2">
           <FiShield className="text-red-500" /> Thông tin truy cập
         </h2>
@@ -161,10 +161,10 @@ function DoctorView({ user }) {
 
       {/* Result */}
       {result && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="card bg-green-50 border border-green-200">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+              <div className="w-8 h-8 bg-green-100 rounded-xl flex items-center justify-center">
                 <FiUser className="text-green-600" />
               </div>
               <div>
@@ -202,7 +202,7 @@ function DoctorView({ user }) {
                 return (
                   <div key={i} className="card space-y-2">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-primary-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <div className="w-7 h-7 bg-primary-50 rounded-lg flex items-center justify-center flex-shrink-0">
                         <FiFileText className="text-primary-600 text-sm" />
                       </div>
                       <div>
@@ -254,11 +254,11 @@ function PatientView({ user }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Nhật ký khẩn cấp</h1>
-          <p className="text-gray-500 mt-1">Lịch sử truy cập khẩn cấp vào hồ sơ của bạn</p>
+          <h1 className="text-lg font-bold text-gray-900">Nhật ký khẩn cấp</h1>
+          <p className="text-gray-500 mt-0.5">Lịch sử truy cập khẩn cấp vào hồ sơ của bạn</p>
         </div>
         <button onClick={loadLogs} disabled={loading} className="btn-secondary flex items-center gap-2 text-sm">
           <FiRefreshCw className={loading ? 'animate-spin' : ''} /> Làm mới
@@ -277,19 +277,19 @@ function PatientView({ user }) {
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
       ) : logs.length === 0 ? (
-        <div className="card text-center py-12">
-          <FiShield className="text-4xl text-gray-300 mx-auto mb-3" />
+        <div className="card text-center py-8">
+          <FiShield className="text-2xl text-gray-300 mx-auto mb-3" />
           <p className="text-gray-400">Chưa có lần truy cập khẩn cấp nào</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {logs.map((log, i) => {
             const val = log.Value || log
             return (
               <div key={i} className="card border-l-4 border-red-400 space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-7 h-7 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
                       <FiAlertTriangle className="text-red-500 text-sm" />
                     </div>
                     <div>
@@ -349,10 +349,10 @@ function HospitalView({ user }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Nhật ký truy cập khẩn cấp</h1>
-        <p className="text-gray-500 mt-1">Kiểm tra lịch sử truy cập khẩn cấp của từng bệnh nhân</p>
+        <h1 className="text-lg font-bold text-gray-900">Nhật ký truy cập khẩn cấp</h1>
+        <p className="text-gray-500 mt-0.5">Kiểm tra lịch sử truy cập khẩn cấp của từng bệnh nhân</p>
       </div>
 
       <form onSubmit={handleSearch} className="card flex gap-3 max-w-xl">
@@ -376,8 +376,8 @@ function HospitalView({ user }) {
 
       {searched && (
         logs.length === 0 ? (
-          <div className="card text-center py-12">
-            <FiShield className="text-4xl text-gray-300 mx-auto mb-3" />
+          <div className="card text-center py-8">
+            <FiShield className="text-2xl text-gray-300 mx-auto mb-3" />
             <p className="text-gray-400">Không có nhật ký truy cập khẩn cấp</p>
           </div>
         ) : (
@@ -388,7 +388,7 @@ function HospitalView({ user }) {
               return (
                 <div key={i} className="card border-l-4 border-red-400 space-y-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-7 h-7 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
                       <FiAlertTriangle className="text-red-500 text-sm" />
                     </div>
                     <div className="flex-1">

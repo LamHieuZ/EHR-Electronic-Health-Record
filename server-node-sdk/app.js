@@ -49,11 +49,14 @@ app.get('/status', async function (req, res, next) {
 
 app.post('/registerPatient', async function (req, res, next) {
     try {
-        let {adminId, userId, name, dob, city, orgId} = req.body;
+        let {adminId, userId, name, dob, city, password, orgId} = req.body;
 
         console.log("Received request:", req.body);
         if (!userId) {
             throw new Error("Missing input data. Please enter userId.");
+        }
+        if (!password || password.length < 4) {
+            throw new Error("Password is required (min 4 characters).");
         }
         adminId = adminId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
         const submitterId = req.body.submitterId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
@@ -62,6 +65,10 @@ app.post('/registerPatient', async function (req, res, next) {
             chaincodeFcn: 'onboardPatient',
             patientId: userId, name, dob, city
         }, {}, orgId || null);
+
+        // Luu hash password
+        await helper.savePassword(userId, password);
+
         console.log("Result from user registration function:", result);
         res.status(200).send(result);
     } catch (error) {
@@ -75,9 +82,12 @@ app.post('/registerPatient', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardHospital', async function (req, res, next) {
     try {
-        const {adminId, hospitalId, name, city, orgId} = req.body;
+        const {adminId, hospitalId, name, city, password, orgId} = req.body;
         if (!hospitalId || !name) {
             throw new Error("Missing hospitalId or name");
+        }
+        if (!password || password.length < 4) {
+            throw new Error("Password is required (min 4 characters).");
         }
         const admin = adminId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
         const result = await helper.registerUser(
@@ -86,6 +96,7 @@ app.post('/onboardHospital', async function (req, res, next) {
             { hospitalId: hospitalId },
             orgId || null
         );
+        await helper.savePassword(hospitalId, password);
         res.status(200).send(result);
     } catch (error) {
         next(error);
@@ -97,9 +108,12 @@ app.post('/onboardHospital', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardDoctor', async function (req, res, next) {
     try {
-        const {hospitalUserId, doctorId, name, city, dob, department, position, specialization, phone, orgId} = req.body;
+        const {hospitalUserId, doctorId, name, city, dob, department, position, specialization, phone, password, orgId} = req.body;
         if (!doctorId || !name) {
             throw new Error("Missing doctorId or name");
+        }
+        if (!password || password.length < 4) {
+            throw new Error("Password is required (min 4 characters).");
         }
         const admin = orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin';
         const result = await helper.registerUser(
@@ -108,6 +122,7 @@ app.post('/onboardDoctor', async function (req, res, next) {
             { hospitalId: req.body.hospitalId || admin },
             orgId || null
         );
+        await helper.savePassword(doctorId, password);
         res.status(200).send(result);
     } catch (error) {
         next(error);
@@ -119,9 +134,12 @@ app.post('/onboardDoctor', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardPharmacy', async function (req, res, next) {
     try {
-        const {hospitalUserId, pharmacyId, name, city, orgId} = req.body;
+        const {hospitalUserId, pharmacyId, name, city, password, orgId} = req.body;
         if (!pharmacyId || !name) {
             throw new Error("Missing pharmacyId or name");
+        }
+        if (!password || password.length < 4) {
+            throw new Error("Password is required (min 4 characters).");
         }
         const admin = orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin';
         const result = await helper.registerUser(
@@ -130,6 +148,7 @@ app.post('/onboardPharmacy', async function (req, res, next) {
             { hospitalId: req.body.hospitalId || admin },
             orgId || null
         );
+        await helper.savePassword(pharmacyId, password);
         res.status(200).send(result);
     } catch (error) {
         next(error);
@@ -141,9 +160,12 @@ app.post('/onboardPharmacy', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardInsuranceCompany', async function (req, res, next) {
     try {
-        const {companyId, name, city} = req.body;
+        const {companyId, name, city, password} = req.body;
         if (!companyId || !name) {
             throw new Error("Missing companyId or name");
+        }
+        if (!password || password.length < 4) {
+            throw new Error("Password is required (min 4 characters).");
         }
         const result = await helper.registerUser(
             'insuranceAdmin',
@@ -153,6 +175,7 @@ app.post('/onboardInsuranceCompany', async function (req, res, next) {
             { chaincodeFcn: 'onboardInsuranceCompany', companyId, name, city },
             { companyId: companyId }
         );
+        await helper.savePassword(companyId, password);
         res.status(200).send(result);
     } catch (error) {
         next(error);
@@ -164,9 +187,12 @@ app.post('/onboardInsuranceCompany', async function (req, res, next) {
 // ===========================================================================================
 app.post('/onboardInsuranceAgent', async function (req, res, next) {
     try {
-        const {companyUserId, agentId, name, city} = req.body;
+        const {companyUserId, agentId, name, city, password} = req.body;
         if (!agentId || !name) {
             throw new Error("Missing agentId or name");
+        }
+        if (!password || password.length < 4) {
+            throw new Error("Password is required (min 4 characters).");
         }
         const companyUser = companyUserId || 'insuranceCompany01';
         const result = await helper.registerUser(
@@ -177,6 +203,7 @@ app.post('/onboardInsuranceAgent', async function (req, res, next) {
             { chaincodeFcn: 'onboardInsurance', agentId, name, city },
             { companyId: req.body.companyId || companyUser }
         );
+        await helper.savePassword(agentId, password);
         res.status(200).send(result);
     } catch (error) {
         next(error);
@@ -229,8 +256,9 @@ app.post('/getAllAgents', async function (req, res, next) {
 app.post('/loginPatient', async function (req, res, next){
     try {
         let userId;
+        let password = req.body.password || '';
 
-        // check request body        
+        // check request body
         if (req.body.userId) {
             userId = req.body.userId.trim();
 
@@ -239,7 +267,7 @@ app.post('/loginPatient', async function (req, res, next){
             throw new Error("Missing input data. Please enter all the user details.");
         }
 
-        const result = await helper.login(userId);
+        const result = await helper.login(userId, password);
         console.log("Result from user login function: ", result);
         //check response returned by login function and set API response accordingly
         res.status(200).send(result);
@@ -250,6 +278,47 @@ app.post('/loginPatient', async function (req, res, next){
 
 });
 
+// ===========================================================================================
+// UPDATE PROFILE - Cap nhat thong tin ca nhan
+// ===========================================================================================
+app.post('/updateProfile', async function (req, res, next) {
+    try {
+        const { userId, name, dob, city, department, position, specialization, phone } = req.body;
+        if (!userId) throw new Error('Missing userId');
+        const result = await invoke.invokeTransaction('updateProfile', { name, dob, city, department, position, specialization, phone }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// CHANGE PASSWORD - Doi mat khau
+// ===========================================================================================
+app.post('/changePassword', async function (req, res, next) {
+    try {
+        const { userId, currentPassword, newPassword } = req.body;
+        if (!userId) throw new Error('Missing userId');
+        if (!newPassword || newPassword.length < 4) throw new Error('New password must be at least 4 characters');
+
+        // Verify current password (neu co)
+        const valid = await helper.verifyPassword(userId, currentPassword || '');
+        // Neu user da co password thi phai nhap dung current password
+        const fs = require('fs');
+        const path = require('path');
+        const storePath = path.join(process.cwd(), 'wallet', 'passwords.json');
+        let store = {};
+        try { if (fs.existsSync(storePath)) store = JSON.parse(fs.readFileSync(storePath, 'utf8')); } catch {}
+        if (store[userId] && !valid) {
+            throw new Error('Current password is incorrect');
+        }
+
+        await helper.savePassword(userId, newPassword);
+        res.status(200).send({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+        next(error);
+    }
+});
 
 app.post('/queryHistoryOfAsset', async function (req, res, next){
     try {

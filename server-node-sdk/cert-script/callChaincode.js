@@ -95,7 +95,7 @@ async function main() {
                 gateway.disconnect();
 
     } catch (error) {
-        console.error(`Failed to register user "insuranceAgent01-Rama": ${error}`);
+        console.error(`Failed to register user "insuranceAgent01": ${error}`);
         process.exit(1);
       }
 }

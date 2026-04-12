@@ -10,6 +10,7 @@ const FabricCAServices = require('fabric-ca-client');
 const { Wallets } = require('fabric-network');
 const fs = require('fs');
 const path = require('path');
+const { savePassword } = require('../helper');
 
 async function main() {
     try {

@@ -364,6 +364,45 @@ class ehrChainCode extends Contract {
         return `Patient ${patientId} registered`;
     }
 
+    // Cap nhat thong tin ca nhan - moi role tu cap nhat chinh minh
+    async updateProfile(ctx, args) {
+        const { name, dob, city, department, position, specialization, phone } = JSON.parse(args);
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
+
+        let key, data;
+        if (role === 'patient') {
+            key = `patient-${callerId}`;
+        } else if (role === 'doctor') {
+            key = `doctor-${callerId}`;
+        } else if (role === 'hospital') {
+            key = `hospital-${callerId}`;
+        } else if (role === 'pharmacy') {
+            key = `pharmacy-${callerId}`;
+        } else {
+            throw new Error(`Role ${role} does not support profile update`);
+        }
+
+        const existing = await ctx.stub.getState(key);
+        if (!existing || existing.length === 0) {
+            throw new Error(`Profile not found for ${callerId}`);
+        }
+        data = JSON.parse(existing.toString());
+
+        // Chi cap nhat cac field duoc truyen vao (khong ghi de field cu neu khong truyen)
+        if (name !== undefined) data.name = name;
+        if (dob !== undefined) data.dob = dob;
+        if (city !== undefined) data.city = city;
+        if (role === 'doctor') {
+            if (department !== undefined) data.department = department;
+            if (position !== undefined) data.position = position;
+            if (specialization !== undefined) data.specialization = specialization;
+            if (phone !== undefined) data.phone = phone;
+        }
+        data.updatedAt = this.getTimestamp(ctx);
+
+        await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(data))));
+        return JSON.stringify({ message: `Profile updated for ${callerId}`, data });
+    }
 
     // ===========================================================================================
     // ACCESS CONTROL - Cap quyen & thu hoi quyen

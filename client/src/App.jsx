@@ -49,6 +49,7 @@ export default function App() {
         <Route path="/insurance/:tab" element={<InsuranceClaims />} />
         <Route path="/emergency" element={<EmergencyLogs />} />
         <Route path="/admin/doctors" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
+        <Route path="/admin/pharmacies" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
         <Route path="/admin/ledger" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
       </Route>
 

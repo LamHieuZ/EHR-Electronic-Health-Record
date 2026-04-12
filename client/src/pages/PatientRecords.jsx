@@ -111,10 +111,10 @@ export default function PatientRecords() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Hồ sơ bệnh án</h1>
-        <p className="text-gray-500 mt-1">Xem và theo dõi lịch sử khám bệnh</p>
+        <h1 className="text-lg font-bold text-gray-900">Hồ sơ bệnh án</h1>
+        <p className="text-gray-500 mt-0.5">Xem và theo dõi lịch sử khám bệnh</p>
       </div>
 
       {user.role !== 'patient' && (
@@ -140,12 +140,12 @@ export default function PatientRecords() {
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
       ) : records.length === 0 ? (
-        <div className="card text-center py-12">
-          <FiFileText className="text-4xl text-gray-300 mx-auto mb-3" />
+        <div className="card text-center py-8">
+          <FiFileText className="text-2xl text-gray-300 mx-auto mb-3" />
           <p className="text-gray-400">Chưa có hồ sơ bệnh án nào</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {records.map((record, i) => {
             const val = record.Value || record
             const key = record.Key || `record-${i}`
@@ -154,9 +154,9 @@ export default function PatientRecords() {
             return (
               <div key={i} className="card">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <FiFileText className="text-primary-600" />
                     </div>
                     <div>
@@ -200,22 +200,25 @@ export default function PatientRecords() {
 
                 {isExpanded && history[key] && (
                   <div className="mt-3 border-l-2 border-primary-100 pl-4 space-y-3">
-                    {history[key].map((h, j) => (
-                      <div key={j} className="text-sm">
-                        <p className="text-gray-400 text-xs">
-                          TxId: <code>{h.TxId?.slice(0, 20)}…</code>
-                          {h.Timestamp && <span className="ml-2">{new Date(h.Timestamp).toLocaleString('vi-VN')}</span>}
-                        </p>
-                        <div className="mt-1 grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="bg-blue-50/50 rounded-lg p-2">
-                            <DiagnosisCard diagnosis={h.Value?.diagnosis} />
-                          </div>
-                          <div className="bg-green-50/50 rounded-lg p-2">
-                            <PrescriptionCard prescription={h.Value?.prescription} />
+                    {history[key].map((h, j) => {
+                      const val = h.Value || h.asset
+                      return (
+                        <div key={j} className="text-sm">
+                          <p className="text-gray-400 text-xs">
+                            TxId: <code>{(h.TxId || h.txId)?.slice(0, 20)}…</code>
+                            {(h.Timestamp || h.timestamp) && <span className="ml-2">{new Date(h.Timestamp || h.timestamp).toLocaleString('vi-VN')}</span>}
+                          </p>
+                          <div className="mt-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="bg-blue-50/50 rounded-lg p-2">
+                              <DiagnosisCard diagnosis={val?.diagnosis} />
+                            </div>
+                            <div className="bg-green-50/50 rounded-lg p-2">
+                              <PrescriptionCard prescription={val?.prescription} />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>

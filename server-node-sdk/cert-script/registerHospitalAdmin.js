@@ -4,6 +4,7 @@ const FabricCAServices = require('fabric-ca-client');
 const { Wallets, Gateway } = require('fabric-network');
 const fs = require('fs');
 const path = require('path');
+const { savePassword } = require('../helper');
 
 async function main() {
     try {
@@ -47,6 +48,7 @@ async function main() {
             enrollmentID: 'hospitalAdmin',
             role: 'client',
             attrs: [
+                { name: 'hf.Registrar.Roles', value: 'client', ecert: true },
                 { name: 'role', value: 'hospital', ecert: true },
                 { name: 'uuid', value: 'hospitalAdmin', ecert: true },
                 { name: 'hospitalId', value: 'hospitalAdmin', ecert: true },
@@ -75,6 +77,7 @@ async function main() {
 
         // Step 3: Remove temporary CA admin
         await wallet.remove('_caAdmin');
+        await savePassword('hospitalAdmin', '1234');
 
         // Step 4: Onboard hospital to blockchain
         console.log('Onboarding hospital to blockchain...');

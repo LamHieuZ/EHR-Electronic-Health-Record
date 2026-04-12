@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { fetchLedger, getAllHospitals, getAllDoctors, onboardHospital, onboardDoctor } from '../services/api'
+import { fetchLedger, getAllHospitals, getAllDoctors, getAllPharmacies, onboardHospital, onboardDoctor, onboardPharmacy } from '../services/api'
 import { toast } from 'react-toastify'
 import {
   FiDatabase, FiDownload, FiSearch, FiRefreshCw, FiUser, FiFileText,
@@ -151,12 +151,12 @@ function HospitalRow({ hospital, userId }) {
         onClick={toggleDoctors}
         className="w-full flex items-center gap-4 p-4 hover:bg-gray-50/50 transition-colors text-left"
       >
-        <div className="w-11 h-11 bg-cyan-50 rounded-xl flex items-center justify-center flex-shrink-0">
+        <div className="w-9 h-9 bg-cyan-50 rounded-xl flex items-center justify-center flex-shrink-0">
           <FiShield className="text-cyan-600 text-lg" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-gray-900">{hospital.name || hospital.hospitalId}</p>
-          <div className="flex items-center gap-4 mt-0.5 text-xs text-gray-400 flex-wrap">
+          <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
             <span className="font-mono">{hospital.hospitalId}</span>
             {hospital.city && (
               <span className="flex items-center gap-1">
@@ -192,7 +192,7 @@ function HospitalRow({ hospital, userId }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {doctors.map((doc, i) => (
                 <div key={i} className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-3">
-                  <div className="w-9 h-9 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-7 h-7 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
                     <FiActivity className="text-purple-600 text-sm" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -224,7 +224,7 @@ function HospitalsTab({ userId }) {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ hospitalId: '', name: '', city: '' })
+  const [form, setForm] = useState({ hospitalId: '', name: '', city: '', password: '' })
   const [submitting, setSubmitting] = useState(false)
 
   const load = async () => {
@@ -246,10 +246,10 @@ function HospitalsTab({ userId }) {
     e.preventDefault()
     setSubmitting(true)
     try {
-      const res = await onboardHospital({ adminId: userId, hospitalId: form.hospitalId, name: form.name, city: form.city })
+      const res = await onboardHospital({ adminId: userId, hospitalId: form.hospitalId, name: form.name, city: form.city, password: form.password })
       if (res.data.success || res.data.message) {
         toast.success(`Đã thêm bệnh viện ${form.name}!`)
-        setForm({ hospitalId: '', name: '', city: '' })
+        setForm({ hospitalId: '', name: '', city: '', password: '' })
         setShowForm(false)
         load()
       } else {
@@ -322,6 +322,18 @@ function HospitalsTab({ userId }) {
                   placeholder="VD: Hà Nội"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu *</label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))}
+                  className="input-field"
+                  placeholder="Ít nhất 4 ký tự"
+                  required
+                  minLength={4}
+                />
+              </div>
             </div>
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
@@ -354,8 +366,8 @@ function HospitalsTab({ userId }) {
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
       ) : hospitals.length === 0 ? (
-        <div className="card text-center py-16">
-          <FiShield className="text-5xl text-gray-300 mx-auto mb-4" />
+        <div className="card text-center py-10">
+          <FiShield className="text-3xl text-gray-300 mx-auto mb-4" />
           <p className="text-gray-400">Nhấn "Tải dữ liệu" để xem danh sách bệnh viện</p>
         </div>
       ) : filtered.length === 0 ? (
@@ -386,7 +398,7 @@ function DoctorsTab({ userId }) {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+  const [form, setForm] = useState({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '', password: '' })
   const [submitting, setSubmitting] = useState(false)
 
   const load = async () => {
@@ -425,10 +437,11 @@ function DoctorsTab({ userId }) {
         position: form.position,
         specialization: form.specialization,
         phone: form.phone,
+        password: form.password,
       })
       if (res.data.success || res.data.message || res.data.userID) {
         toast.success(`Đã thêm bác sĩ ${form.name} — ID: ${doctorId}`, { autoClose: false })
-        setForm({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+        setForm({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '', password: '' })
         setShowForm(false)
         load()
       } else {
@@ -511,6 +524,10 @@ function DoctorsTab({ userId }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
                 <input type="text" value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: Hà Nội" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu *</label>
+                <input type="password" value={form.password} onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))} className="input-field" placeholder="Ít nhất 4 ký tự" required minLength={4} />
+              </div>
             </div>
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
@@ -543,8 +560,8 @@ function DoctorsTab({ userId }) {
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
       ) : doctors.length === 0 ? (
-        <div className="card text-center py-16">
-          <FiActivity className="text-5xl text-gray-300 mx-auto mb-4" />
+        <div className="card text-center py-10">
+          <FiActivity className="text-3xl text-gray-300 mx-auto mb-4" />
           <p className="text-gray-400">Nhấn "Tải dữ liệu" để xem danh sách bác sĩ</p>
         </div>
       ) : filtered.length === 0 ? (
@@ -565,7 +582,7 @@ function DoctorsTab({ userId }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {docs.map((doc, i) => (
                     <div key={i} className="card flex items-start gap-3">
-                      <div className="w-11 h-11 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
                         <FiActivity className="text-purple-600 text-lg" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -588,6 +605,166 @@ function DoctorsTab({ userId }) {
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// Pharmacies tab — Admin quan ly nha thuoc
+// ============================================================
+function PharmaciesTab({ userId }) {
+  const [pharmacies, setPharmacies] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', city: '', password: '' })
+  const [submitting, setSubmitting] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await getAllPharmacies({ userId, hospitalId: '' })
+      const raw = res.data?.data
+      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
+      setPharmacies(data)
+      toast.success(`Đã tải ${data.length} nhà thuốc`)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi tải danh sách nhà thuốc')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    if (!form.name) return
+    setSubmitting(true)
+    try {
+      const normalized = form.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim().replace(/\s+/g, '')
+      const pharmacyId = `PH-${normalized.slice(0, 10)}-${Date.now().toString(36).slice(-4)}`
+      const res = await onboardPharmacy({
+        hospitalUserId: userId,
+        hospitalId: userId,
+        pharmacyId,
+        name: form.name,
+        city: form.city,
+        password: form.password,
+      })
+      if (res.data.success || res.data.message || res.data.userID) {
+        toast.success(`Đã thêm nhà thuốc ${form.name} — ID: ${pharmacyId}`, { autoClose: false })
+        setForm({ name: '', city: '', password: '' })
+        setShowForm(false)
+        load()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi thêm nhà thuốc')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const filtered = pharmacies.filter(p =>
+    !filter || JSON.stringify(p).toLowerCase().includes(filter.toLowerCase())
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          {pharmacies.length > 0 ? `${pharmacies.length} nhà thuốc trong hệ thống` : 'Tải danh sách nhà thuốc từ blockchain'}
+        </p>
+        <div className="flex gap-2">
+          <button onClick={() => setShowForm(v => !v)} className="btn-secondary flex items-center gap-2 text-sm">
+            <FiPlus /> Thêm nhà thuốc
+          </button>
+          <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2 text-sm">
+            <FiRefreshCw className={loading ? 'animate-spin' : ''} />
+            {pharmacies.length === 0 ? 'Tải dữ liệu' : 'Làm mới'}
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="card border-2 border-teal-100">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FiPackage className="text-teal-600" /> Thêm nhà thuốc mới
+          </h3>
+          <form onSubmit={handleAdd} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên nhà thuốc *</label>
+                <input type="text" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} className="input-field" placeholder="VD: Nhà Thuốc An Khang" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
+                <input type="text" value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: TP. Hồ Chí Minh" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu *</label>
+                <input type="password" value={form.password} onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))} className="input-field" placeholder="Ít nhất 4 ký tự" required minLength={4} />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
+                {submitting
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <FiPlus />}
+                Thêm nhà thuốc
+              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {pharmacies.length > 0 && (
+        <div className="relative">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="input-field pl-10"
+            placeholder="Tìm theo tên, ID nhà thuốc, thành phố..."
+          />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40">
+          <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      ) : pharmacies.length === 0 ? (
+        <div className="card text-center py-10">
+          <FiPackage className="text-3xl text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-400">Nhấn "Tải dữ liệu" để xem danh sách nhà thuốc</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card text-center py-10">
+          <p className="text-gray-400">Không tìm thấy kết quả</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map((ph, i) => (
+            <div key={i} className="card flex items-start gap-3">
+              <div className="w-9 h-9 bg-teal-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                <FiPackage className="text-teal-600 text-lg" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 truncate">{ph.name || ph.pharmacyId}</p>
+                <p className="text-xs text-gray-400 font-mono">{ph.pharmacyId}</p>
+                <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
+                  {ph.city && <span className="flex items-center gap-0.5"><FiMapPin className="text-[10px]" />{ph.city}</span>}
+                  {ph.hospitalId && <span>BV: {ph.hospitalId}</span>}
+                  {ph.timestamp && <span>{new Date(ph.timestamp).toLocaleDateString('vi-VN')}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -755,8 +932,8 @@ function LedgerTab({ userId }) {
       )}
 
       {ledger.length === 0 && !loading && (
-        <div className="card text-center py-16">
-          <FiDatabase className="text-5xl text-gray-300 mx-auto mb-4" />
+        <div className="card text-center py-10">
+          <FiDatabase className="text-3xl text-gray-300 mx-auto mb-4" />
           <p className="text-gray-400 text-lg">Nhấn "Tải sổ cái" để xem dữ liệu blockchain</p>
         </div>
       )}
@@ -769,51 +946,59 @@ function LedgerTab({ userId }) {
 // ============================================================
 function HospitalView({ user }) {
   const [doctors, setDoctors] = useState([])
+  const [pharmacies, setPharmacies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+  const [showDoctorForm, setShowDoctorForm] = useState(false)
+  const [showPharmacyForm, setShowPharmacyForm] = useState(false)
+  const [doctorForm, setDoctorForm] = useState({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+  const [pharmacyForm, setPharmacyForm] = useState({ name: '', city: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [activeSection, setActiveSection] = useState('doctors')
 
-  useEffect(() => { loadDoctors() }, [])
+  useEffect(() => { loadAll() }, [])
 
-  const loadDoctors = async () => {
+  const loadAll = async () => {
     setLoading(true)
     try {
-      const res = await getAllDoctors({ userId: user.userId, hospitalId: user.userId })
-      const raw = res.data?.data
-      const data = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : [])
-      setDoctors(data)
+      const [docRes, phRes] = await Promise.all([
+        getAllDoctors({ userId: user.userId, hospitalId: user.userId }),
+        getAllPharmacies({ userId: user.userId, hospitalId: user.userId }),
+      ])
+      const rawDoc = docRes.data?.data
+      setDoctors(Array.isArray(rawDoc) ? rawDoc : (typeof rawDoc === 'string' ? JSON.parse(rawDoc || '[]') : []))
+      const rawPh = phRes.data?.data
+      setPharmacies(Array.isArray(rawPh) ? rawPh : (typeof rawPh === 'string' ? JSON.parse(rawPh || '[]') : []))
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Lỗi tải danh sách bác sĩ')
+      toast.error(err.response?.data?.error || 'Lỗi tải dữ liệu')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleAdd = async (e) => {
+  const handleAddDoctor = async (e) => {
     e.preventDefault()
     setSubmitting(true)
     try {
-      const normalized = form.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim().replace(/\s+/g, '')
+      const normalized = doctorForm.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim().replace(/\s+/g, '')
       const doctorId = `D-${normalized.slice(0, 10)}-${Date.now().toString(36).slice(-4)}`
       const res = await onboardDoctor({
         hospitalUserId: user.userId,
         hospitalId: user.userId,
         doctorId,
-        name: form.name,
-        city: form.city,
-        dob: form.dob,
-        department: form.department,
-        position: form.position,
-        specialization: form.specialization,
-        phone: form.phone,
+        name: doctorForm.name,
+        city: doctorForm.city,
+        dob: doctorForm.dob,
+        department: doctorForm.department,
+        position: doctorForm.position,
+        specialization: doctorForm.specialization,
+        phone: doctorForm.phone,
       })
       if (res.data.success || res.data.message) {
-        toast.success(`Đã thêm bác sĩ ${form.name} — ID: ${doctorId}`, { autoClose: false })
-        setForm({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
-        setShowForm(false)
-        loadDoctors()
+        toast.success(`Đã thêm bác sĩ ${doctorForm.name} — ID: ${doctorId}`, { autoClose: false })
+        setDoctorForm({ name: '', city: '', dob: '', department: '', position: '', specialization: '', phone: '' })
+        setShowDoctorForm(false)
+        loadAll()
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
@@ -824,84 +1009,130 @@ function HospitalView({ user }) {
     }
   }
 
-  const filtered = doctors.filter(d =>
+  const handleAddPharmacy = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      const normalized = pharmacyForm.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim().replace(/\s+/g, '')
+      const pharmacyId = `PH-${normalized.slice(0, 10)}-${Date.now().toString(36).slice(-4)}`
+      const res = await onboardPharmacy({
+        hospitalUserId: user.userId,
+        hospitalId: user.userId,
+        pharmacyId,
+        name: pharmacyForm.name,
+        city: pharmacyForm.city,
+      })
+      if (res.data.success || res.data.message) {
+        toast.success(`Đã thêm nhà thuốc ${pharmacyForm.name} — ID: ${pharmacyId}`, { autoClose: false })
+        setPharmacyForm({ name: '', city: '' })
+        setShowPharmacyForm(false)
+        loadAll()
+      } else {
+        toast.error(res.data.error || 'Thất bại')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Lỗi thêm nhà thuốc')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const filteredDoctors = doctors.filter(d =>
     !filter || JSON.stringify(d).toLowerCase().includes(filter.toLowerCase())
+  )
+  const filteredPharmacies = pharmacies.filter(p =>
+    !filter || JSON.stringify(p).toLowerCase().includes(filter.toLowerCase())
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Bệnh viện</h1>
-        <p className="text-gray-500 mt-1">{user.name || user.userId} — Danh sách bác sĩ</p>
+        <h1 className="text-lg font-bold text-gray-900">Bệnh viện</h1>
+        <p className="text-gray-500 mt-0.5">{user.name || user.userId} — Quản lý bác sĩ & nhà thuốc</p>
       </div>
 
-      <div className="card bg-gradient-to-r from-cyan-500 to-cyan-700 text-white">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
-            <FiShield className="text-2xl" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <button onClick={() => setActiveSection('doctors')} className={`card text-left transition-all ${activeSection === 'doctors' ? 'bg-gradient-to-r from-cyan-500 to-cyan-700 text-white' : 'hover:shadow-md'}`}>
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 ${activeSection === 'doctors' ? 'bg-white/20' : 'bg-purple-50'} rounded-xl flex items-center justify-center`}>
+              <FiActivity className={`text-2xl ${activeSection === 'doctors' ? '' : 'text-purple-600'}`} />
+            </div>
+            <div>
+              <p className={`text-sm ${activeSection === 'doctors' ? 'text-cyan-100' : 'text-gray-500'}`}>Tổng bác sĩ</p>
+              <p className="text-3xl font-bold">{doctors.length}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-cyan-100 text-sm">Tổng bác sĩ</p>
-            <p className="text-3xl font-bold">{doctors.length}</p>
+        </button>
+        <button onClick={() => setActiveSection('pharmacies')} className={`card text-left transition-all ${activeSection === 'pharmacies' ? 'bg-gradient-to-r from-teal-500 to-teal-700 text-white' : 'hover:shadow-md'}`}>
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 ${activeSection === 'pharmacies' ? 'bg-white/20' : 'bg-teal-50'} rounded-xl flex items-center justify-center`}>
+              <FiPackage className={`text-2xl ${activeSection === 'pharmacies' ? '' : 'text-teal-600'}`} />
+            </div>
+            <div>
+              <p className={`text-sm ${activeSection === 'pharmacies' ? 'text-teal-100' : 'text-gray-500'}`}>Tổng nhà thuốc</p>
+              <p className="text-3xl font-bold">{pharmacies.length}</p>
+            </div>
           </div>
-          <div className="ml-auto flex gap-2">
-            <button
-              onClick={() => setShowForm(v => !v)}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
-            >
-              <FiPlus /> Thêm bác sĩ
-            </button>
-            <button
-              onClick={loadDoctors}
-              disabled={loading}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"
-            >
-              <FiRefreshCw className={loading ? 'animate-spin' : ''} /> Làm mới
-            </button>
-          </div>
-        </div>
+        </button>
       </div>
 
-      {showForm && (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => activeSection === 'doctors' ? setShowDoctorForm(v => !v) : setShowPharmacyForm(v => !v)}
+          className="btn-secondary flex items-center gap-2 text-sm"
+        >
+          <FiPlus /> {activeSection === 'doctors' ? 'Thêm bác sĩ' : 'Thêm nhà thuốc'}
+        </button>
+        <button
+          onClick={loadAll}
+          disabled={loading}
+          className="btn-primary flex items-center gap-2 text-sm"
+        >
+          <FiRefreshCw className={loading ? 'animate-spin' : ''} /> Làm mới
+        </button>
+      </div>
+
+      {/* Doctor form */}
+      {activeSection === 'doctors' && showDoctorForm && (
         <div className="card border-2 border-purple-100">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <FiActivity className="text-purple-600" /> Thêm bác sĩ mới
           </h3>
-          <form onSubmit={handleAdd} className="space-y-3">
+          <form onSubmit={handleAddDoctor} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên *</label>
-                <input type="text" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} className="input-field" placeholder="VD: Nguyễn Văn B" required />
+                <input type="text" value={doctorForm.name} onChange={(e) => setDoctorForm(f => ({ ...f, name: e.target.value }))} className="input-field" placeholder="VD: Nguyễn Văn B" required />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ngày sinh</label>
-                <input type="date" value={form.dob} onChange={(e) => setForm(f => ({ ...f, dob: e.target.value }))} className="input-field" />
+                <input type="date" value={doctorForm.dob} onChange={(e) => setDoctorForm(f => ({ ...f, dob: e.target.value }))} className="input-field" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
-                <input type="tel" value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} className="input-field" placeholder="VD: 0912345678" />
+                <input type="tel" value={doctorForm.phone} onChange={(e) => setDoctorForm(f => ({ ...f, phone: e.target.value }))} className="input-field" placeholder="VD: 0912345678" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Khoa</label>
-                <select value={form.department} onChange={(e) => setForm(f => ({ ...f, department: e.target.value }))} className="input-field">
+                <select value={doctorForm.department} onChange={(e) => setDoctorForm(f => ({ ...f, department: e.target.value }))} className="input-field">
                   <option value="">-- Chọn khoa --</option>
                   {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Chức vụ</label>
-                <select value={form.position} onChange={(e) => setForm(f => ({ ...f, position: e.target.value }))} className="input-field">
+                <select value={doctorForm.position} onChange={(e) => setDoctorForm(f => ({ ...f, position: e.target.value }))} className="input-field">
                   <option value="">-- Chọn chức vụ --</option>
                   {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Chuyên khoa</label>
-                <input type="text" value={form.specialization} onChange={(e) => setForm(f => ({ ...f, specialization: e.target.value }))} className="input-field" placeholder="VD: Phẫu thuật tim" />
+                <input type="text" value={doctorForm.specialization} onChange={(e) => setDoctorForm(f => ({ ...f, specialization: e.target.value }))} className="input-field" placeholder="VD: Phẫu thuật tim" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
-                <input type="text" value={form.city} onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: TP. Hồ Chí Minh" />
+                <input type="text" value={doctorForm.city} onChange={(e) => setDoctorForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: TP. Hồ Chí Minh" />
               </div>
             </div>
             <div className="flex gap-2 pt-1">
@@ -911,7 +1142,37 @@ function HospitalView({ user }) {
                   : <FiPlus />}
                 Thêm bác sĩ
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
+              <button type="button" onClick={() => setShowDoctorForm(false)} className="btn-secondary">Hủy</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Pharmacy form */}
+      {activeSection === 'pharmacies' && showPharmacyForm && (
+        <div className="card border-2 border-teal-100">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FiPackage className="text-teal-600" /> Thêm nhà thuốc mới
+          </h3>
+          <form onSubmit={handleAddPharmacy} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên nhà thuốc *</label>
+                <input type="text" value={pharmacyForm.name} onChange={(e) => setPharmacyForm(f => ({ ...f, name: e.target.value }))} className="input-field" placeholder="VD: Nhà Thuốc An Khang" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thành phố</label>
+                <input type="text" value={pharmacyForm.city} onChange={(e) => setPharmacyForm(f => ({ ...f, city: e.target.value }))} className="input-field" placeholder="VD: TP. Hồ Chí Minh" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
+                {submitting
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <FiPlus />}
+                Thêm nhà thuốc
+              </button>
+              <button type="button" onClick={() => setShowPharmacyForm(false)} className="btn-secondary">Hủy</button>
             </div>
           </form>
         </div>
@@ -923,7 +1184,7 @@ function HospitalView({ user }) {
         </div>
       ) : (
         <>
-          {doctors.length > 0 && (
+          {(activeSection === 'doctors' ? doctors : pharmacies).length > 0 && (
             <div className="relative">
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -931,41 +1192,74 @@ function HospitalView({ user }) {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 className="input-field pl-10"
-                placeholder="Tìm theo tên, ID bác sĩ..."
+                placeholder={activeSection === 'doctors' ? 'Tìm theo tên, ID bác sĩ...' : 'Tìm theo tên, ID nhà thuốc...'}
               />
             </div>
           )}
 
-          {filtered.length === 0 ? (
-            <div className="card text-center py-16">
-              <FiActivity className="text-5xl text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-400">
-                {doctors.length === 0 ? 'Chưa có bác sĩ nào được đăng ký' : 'Không tìm thấy kết quả'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filtered.map((doc, i) => (
-                <div key={i} className="card flex items-start gap-3">
-                  <div className="w-11 h-11 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FiActivity className="text-purple-600 text-lg" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{doc.name || doc.doctorId}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {doc.position && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{doc.position}</span>}
-                      {doc.department && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{doc.department}</span>}
-                      {doc.specialization && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{doc.specialization}</span>}
+          {/* Doctors list */}
+          {activeSection === 'doctors' && (
+            filteredDoctors.length === 0 ? (
+              <div className="card text-center py-10">
+                <FiActivity className="text-3xl text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-400">
+                  {doctors.length === 0 ? 'Chưa có bác sĩ nào được đăng ký' : 'Không tìm thấy kết quả'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredDoctors.map((doc, i) => (
+                  <div key={i} className="card flex items-start gap-3">
+                    <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <FiActivity className="text-purple-600 text-lg" />
                     </div>
-                    <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
-                      {doc.phone && <span>{doc.phone}</span>}
-                      {doc.city && <span className="flex items-center gap-0.5"><FiMapPin className="text-[10px]" />{doc.city}</span>}
-                      {doc.dob && <span>NS: {doc.dob}</span>}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{doc.name || doc.doctorId}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {doc.position && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{doc.position}</span>}
+                        {doc.department && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{doc.department}</span>}
+                        {doc.specialization && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{doc.specialization}</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
+                        {doc.phone && <span>{doc.phone}</span>}
+                        {doc.city && <span className="flex items-center gap-0.5"><FiMapPin className="text-[10px]" />{doc.city}</span>}
+                        {doc.dob && <span>NS: {doc.dob}</span>}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Pharmacies list */}
+          {activeSection === 'pharmacies' && (
+            filteredPharmacies.length === 0 ? (
+              <div className="card text-center py-10">
+                <FiPackage className="text-3xl text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-400">
+                  {pharmacies.length === 0 ? 'Chưa có nhà thuốc nào được đăng ký' : 'Không tìm thấy kết quả'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredPharmacies.map((ph, i) => (
+                  <div key={i} className="card flex items-start gap-3">
+                    <div className="w-9 h-9 bg-teal-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <FiPackage className="text-teal-600 text-lg" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{ph.name || ph.pharmacyId}</p>
+                      <p className="text-xs text-gray-400 font-mono">{ph.pharmacyId}</p>
+                      <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
+                        {ph.city && <span className="flex items-center gap-0.5"><FiMapPin className="text-[10px]" />{ph.city}</span>}
+                        {ph.timestamp && <span>{new Date(ph.timestamp).toLocaleDateString('vi-VN')}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </>
       )}
@@ -985,19 +1279,31 @@ export default function AdminLedger() {
     return <HospitalView user={user} />
   }
 
-  const tab = location.pathname.includes('/admin/ledger') ? 'ledger' : 'doctors'
+  const tab = location.pathname.includes('/admin/ledger') ? 'ledger'
+    : location.pathname.includes('/admin/pharmacies') ? 'pharmacies'
+    : 'doctors'
+
+  const TAB_TITLES = {
+    doctors: 'Quản lý bác sĩ',
+    pharmacies: 'Quản lý nhà thuốc',
+    ledger: 'Sổ cái Blockchain',
+  }
+  const TAB_DESCS = {
+    doctors: 'Quản lý bác sĩ trong hệ thống',
+    pharmacies: 'Quản lý nhà thuốc trong hệ thống',
+    ledger: 'Toàn bộ dữ liệu trên Hyperledger Fabric',
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {tab === 'doctors' ? 'Quản lý bác sĩ' : 'Sổ cái Blockchain'}
-        </h1>
-        <p className="text-gray-500 mt-1">{user.name || user.userId} — {tab === 'doctors' ? 'Quản lý bác sĩ trong hệ thống' : 'Toàn bộ dữ liệu trên Hyperledger Fabric'}</p>
+        <h1 className="text-lg font-bold text-gray-900">{TAB_TITLES[tab]}</h1>
+        <p className="text-gray-500 mt-0.5">{user.name || user.userId} — {TAB_DESCS[tab]}</p>
       </div>
 
-      {tab === 'doctors' && <DoctorsTab userId={user.userId} />}
-      {tab === 'ledger'  && <LedgerTab  userId={user.userId} />}
+      {tab === 'doctors'    && <DoctorsTab userId={user.userId} />}
+      {tab === 'pharmacies' && <PharmaciesTab userId={user.userId} />}
+      {tab === 'ledger'     && <LedgerTab  userId={user.userId} />}
     </div>
   )
 }

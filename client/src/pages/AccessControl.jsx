@@ -97,21 +97,21 @@ export default function AccessControl() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Quản lý quyền truy cập</h1>
-        <p className="text-gray-500 mt-1">Cấp hoặc thu hồi quyền truy cập hồ sơ cho bác sĩ</p>
+        <h1 className="text-lg font-bold text-gray-900">Quản lý quyền truy cập</h1>
+        <p className="text-gray-500 mt-0.5">Cấp hoặc thu hồi quyền truy cập hồ sơ cho bác sĩ</p>
       </div>
 
       {/* Authorized doctors */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
               <FiUserCheck className="text-green-600" />
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900">Bác sĩ đã được cấp quyền</h2>
+              <h2 className="text-sm font-bold text-gray-900">Bác sĩ đã được cấp quyền</h2>
               <p className="text-xs text-gray-400">{authorizedDoctors.length} bác sĩ</p>
             </div>
           </div>
@@ -121,15 +121,15 @@ export default function AccessControl() {
         </div>
 
         {authorizedDoctors.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-6">Chưa cấp quyền cho bác sĩ nào</p>
+          <p className="text-sm text-gray-400 text-center py-4">Chưa cấp quyền cho bác sĩ nào</p>
         ) : (
           <div className="space-y-2">
             {authorizedDoctors.map((id) => {
               const doc = allDoctors.find(d => d.doctorId === id)
               return (
-                <div key={id} className="flex items-center justify-between px-4 py-3 bg-green-50 rounded-xl border border-green-100">
+                <div key={id} className="flex items-center justify-between px-3 py-2 bg-green-50 rounded-xl border border-green-100">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
+                    <div className="w-7 h-7 bg-green-100 rounded-lg flex items-center justify-center">
                       <FiActivity className="text-green-600 text-sm" />
                     </div>
                     <div>
@@ -158,12 +158,12 @@ export default function AccessControl() {
 
       {/* Grant access - chon bac si */}
       <div className="card">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
             <FiShield className="text-primary-600" />
           </div>
           <div>
-            <h2 className="font-semibold text-gray-900">Cấp quyền cho bác sĩ</h2>
+            <h2 className="text-sm font-bold text-gray-900">Cấp quyền cho bác sĩ</h2>
             <p className="text-xs text-gray-400">Tìm và chọn bác sĩ để cấp quyền xem hồ sơ</p>
           </div>
         </div>
@@ -188,10 +188,10 @@ export default function AccessControl() {
             {availableDoctors.map((doc, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-purple-50 rounded-lg flex items-center justify-center">
+                  <div className="w-7 h-7 bg-purple-50 rounded-lg flex items-center justify-center">
                     <FiActivity className="text-purple-600 text-sm" />
                   </div>
                   <div>
@@ -221,7 +221,7 @@ export default function AccessControl() {
 
       {/* Info */}
       <div className="card bg-blue-50 border-blue-100">
-        <h3 className="font-medium text-blue-900 mb-2">Lưu ý về quyền truy cập</h3>
+        <h3 className="font-medium text-blue-900 mb-1.5">Lưu ý về quyền truy cập</h3>
         <ul className="text-sm text-blue-700 space-y-1">
           <li>- Mọi thao tác cấp/thu hồi quyền đều được ghi lại trên blockchain</li>
           <li>- Bác sĩ chỉ xem được hồ sơ khi được bạn cho phép</li>

@@ -2,8 +2,35 @@
 
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs');
 const FabricCAServices = require('fabric-ca-client');
 const { Wallets, Gateway } = require('fabric-network');
+
+// ===========================================================================================
+// PASSWORD STORE - Luu hash password vao file JSON (khong luu tren blockchain)
+// ===========================================================================================
+const passwordStorePath = path.join(process.cwd(), 'wallet', 'passwords.json');
+
+const loadPasswords = () => {
+    try {
+        if (fs.existsSync(passwordStorePath)) {
+            return JSON.parse(fs.readFileSync(passwordStorePath, 'utf8'));
+        }
+    } catch { /* ignore */ }
+    return {};
+};
+
+const savePassword = async (userId, plainPassword) => {
+    const store = loadPasswords();
+    store[userId] = await bcrypt.hash(plainPassword, 10);
+    fs.writeFileSync(passwordStorePath, JSON.stringify(store, null, 2));
+};
+
+const verifyPassword = async (userId, plainPassword) => {
+    const store = loadPasswords();
+    if (!store[userId]) return false;
+    return bcrypt.compare(plainPassword, store[userId]);
+};
 
 // ===========================================================================================
 // REGISTER USER - Dang ky user voi Fabric CA va luu vao wallet
@@ -71,9 +98,22 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
         throw new Error(`Admin identity '${adminID}' not found in wallet. Run enrollAdmin.js first.`);
     }
 
-    // build a user object for authenticating with the CA
-    const provider = wallet.getProviderRegistry().getProvider(adminIdentity.type);
-    const adminUser = await provider.getUserContext(adminIdentity, adminID);
+    // Enroll CA bootstrap admin to register new users (hospitalAdmin/insuranceAdmin lack hf.Registrar.Attributes)
+    const caInfo = ccp.certificateAuthorities[caOrg];
+    const caTLSCACerts = caInfo.tlsCACerts ? caInfo.tlsCACerts.pem : null;
+    const caWithTLS = new FabricCAServices(caInfo.url, caTLSCACerts ? { trustedRoots: caTLSCACerts, verify: false } : null, caInfo.caName);
+    const bootstrapEnroll = await caWithTLS.enroll({ enrollmentID: 'admin', enrollmentSecret: 'adminpw' });
+    const bootstrapIdentity = {
+        credentials: {
+            certificate: bootstrapEnroll.certificate,
+            privateKey: bootstrapEnroll.key.toBytes(),
+        },
+        mspId: orgMSP,
+        type: 'X.509',
+    };
+    await wallet.put('_caAdmin', bootstrapIdentity);
+    const provider = wallet.getProviderRegistry().getProvider(bootstrapIdentity.type);
+    const adminUser = await provider.getUserContext(bootstrapIdentity, '_caAdmin');
 
     // Build certificate attributes
     const attrs = [
@@ -112,6 +152,7 @@ const registerUser = async (adminID, submitterId, userID, userRole, args, extraA
         type: 'X.509',
     };
     await wallet.put(userID, x509Identity);
+    await wallet.remove('_caAdmin');
     console.log(`Successfully registered and enrolled user ${userID} and imported it into the wallet`);
 
     // Neu co chaincode function can goi (vd: onboardPatient, onboardDoctor...)
@@ -169,7 +210,7 @@ const deriveRoleFromUserId = (userId) => {
     return map[userId] || null;
 };
 
-const login = async (userID) => {
+const login = async (userID, password) => {
     userID = userID.trim();
 
     // Create a new file system based wallet for managing identities.
@@ -184,6 +225,14 @@ const login = async (userID) => {
         throw new Error(`User ${userID} not found. Please register first.`);
     }
 
+    // Verify password (neu user co password)
+    const store = loadPasswords();
+    if (store[userID]) {
+        if (!password) throw new Error('Password is required.');
+        const valid = await verifyPassword(userID, password);
+        if (!valid) throw new Error('Wrong password.');
+    }
+
     const role = getRoleFromCert(identity.credentials.certificate) || deriveRoleFromUserId(userID);
     if (!role) throw new Error(`Cannot determine role for user ${userID}. Please re-register.`);
 
@@ -195,4 +244,4 @@ const login = async (userID) => {
     };
 }
 
-module.exports = {registerUser, login};
+module.exports = {registerUser, login, savePassword, verifyPassword};

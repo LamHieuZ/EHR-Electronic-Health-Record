@@ -10,6 +10,7 @@ const {Gateway, Wallets } = require('fabric-network');
 const FabricCAServices = require('fabric-ca-client');
 const fs = require('fs');
 const path = require('path');
+const { savePassword } = require('../helper');
 
 async function main() {
     try {
@@ -19,8 +20,9 @@ async function main() {
         const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
         // Create a new CA client for interacting with the CA.
-        const caURL = ccp.certificateAuthorities['ca.org1.example.com'].url;
-        const ca = new FabricCAServices(caURL);
+        const caInfo = ccp.certificateAuthorities['ca.org1.example.com'];
+        const caTLSCACerts = caInfo.tlsCACerts.pem;
+        const ca = new FabricCAServices(caInfo.url, { trustedRoots: caTLSCACerts, verify: false }, caInfo.caName);
 
         // Create a new file system based wallet for managing identities.
         const walletPath = path.join(process.cwd(), 'wallet');
@@ -38,13 +40,23 @@ async function main() {
         const adminIdentity = await wallet.get('hospitalAdmin');
         if (!adminIdentity) {
             console.log('An identity for the hospitalAdmin user "hospitalAdmin" does not exist in the wallet');
-            console.log('Run the enrollAdmin.js application before retrying');
+            console.log('Run the registerHospitalAdmin.js application before retrying');
             return;
         }
 
-        // build a user object for authenticating with the CA
-        const provider = wallet.getProviderRegistry().getProvider(adminIdentity.type);
-        const adminUser = await provider.getUserContext(adminIdentity, 'hospitalAdmin');
+        // Enroll CA bootstrap admin to register new users (hospitalAdmin lacks hf.Registrar.Attributes)
+        const bootstrapEnroll = await ca.enroll({ enrollmentID: 'admin', enrollmentSecret: 'adminpw' });
+        const bootstrapIdentity = {
+            credentials: {
+                certificate: bootstrapEnroll.certificate,
+                privateKey: bootstrapEnroll.key.toBytes(),
+            },
+            mspId: 'Org1MSP',
+            type: 'X.509',
+        };
+        await wallet.put('_caAdmin', bootstrapIdentity);
+        const provider = wallet.getProviderRegistry().getProvider(bootstrapIdentity.type);
+        const adminUser = await provider.getUserContext(bootstrapIdentity, '_caAdmin');
 
         // Register the user, enroll the user, and import the new identity into the wallet.
         const secret = await ca.register({
@@ -75,7 +87,9 @@ async function main() {
             type: 'X.509',
         };
         await wallet.put('Doctor01', x509Identity);
-        console.log('Successfully registered and enrolled hospitalAdmin user "Doctor01" and imported it into the wallet');
+        await wallet.remove('_caAdmin');
+        await savePassword('Doctor01', '1234');
+        console.log('Successfully registered and enrolled user "Doctor01" and imported it into the wallet');
 
         // -----------------------Create Wallet with default balance on ledger------------------ 
                 // Create a new gateway for connecting to our peer node.

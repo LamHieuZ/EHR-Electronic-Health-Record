@@ -56,10 +56,10 @@ function ClaimCard({ claim, canReview, reviewForm, setReviewForm, onReview, load
     ? new Date(val.updatedAt).toLocaleDateString('vi-VN') : null
 
   return (
-    <div className="card space-y-3">
+    <div className="card space-y-2">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-yellow-50 rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 bg-yellow-50 rounded-xl flex items-center justify-center flex-shrink-0">
             <FiDollarSign className="text-yellow-600" />
           </div>
           <div>
@@ -86,7 +86,7 @@ function ClaimCard({ claim, canReview, reviewForm, setReviewForm, onReview, load
       <div className="flex items-center gap-3 flex-wrap">
         <div className="bg-gray-50 rounded-lg px-3 py-2">
           <p className="text-xs text-gray-400">Số tiền yêu cầu</p>
-          <p className="text-lg font-bold text-gray-900">
+          <p className="text-base font-bold text-gray-900">
             {Number(val.amount).toLocaleString('vi-VN')}
             <span className="text-sm font-normal text-gray-500 ml-1">VNĐ</span>
           </p>
@@ -283,7 +283,7 @@ function BlockchainTab({ userId }) {
             ].map(s => (
               <div key={s.label} className={`rounded-xl p-3 ${s.bg}`}>
                 <s.icon className={`text-lg mb-1 ${s.cls}`} />
-                <p className={`text-xl font-bold ${s.cls}`}>{s.value}</p>
+                <p className={`text-lg font-bold ${s.cls}`}>{s.value}</p>
                 <p className="text-xs text-gray-500">{s.label}</p>
               </div>
             ))}
@@ -331,8 +331,8 @@ function BlockchainTab({ userId }) {
       )}
 
       {ledger.length === 0 && !loading && (
-        <div className="card text-center py-12">
-          <FiDatabase className="text-4xl text-gray-300 mx-auto mb-3" />
+        <div className="card text-center py-8">
+          <FiDatabase className="text-2xl text-gray-300 mx-auto mb-3" />
           <p className="text-gray-400">Nhấn "Tải blockchain" để xem sổ cái Org2</p>
         </div>
       )}
@@ -365,12 +365,12 @@ function InsuranceAdminView({ user, tab: urlTab }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-lg font-bold text-gray-900">
           {tab === 'agents' ? 'Chi nhánh bảo hiểm' : 'Sổ cái Blockchain'}
         </h1>
-        <p className="text-gray-500 mt-1">{user.name || user.userId} — {tab === 'agents' ? 'Quản lý chi nhánh thuộc công ty' : 'Toàn bộ dữ liệu Org2 trên Hyperledger Fabric'}</p>
+        <p className="text-gray-500 mt-0.5">{user.name || user.userId} — {tab === 'agents' ? 'Quản lý chi nhánh thuộc công ty' : 'Toàn bộ dữ liệu Org2 trên Hyperledger Fabric'}</p>
       </div>
 
       {tab === 'agents' && (
@@ -387,8 +387,8 @@ function InsuranceAdminView({ user, tab: urlTab }) {
               <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
             </div>
           ) : agents.length === 0 ? (
-            <div className="card text-center py-12">
-              <FiBriefcase className="text-4xl text-gray-300 mx-auto mb-3" />
+            <div className="card text-center py-8">
+              <FiBriefcase className="text-2xl text-gray-300 mx-auto mb-3" />
               <p className="text-gray-400">Chưa có chi nhánh nào được đăng ký</p>
             </div>
           ) : (
@@ -396,7 +396,7 @@ function InsuranceAdminView({ user, tab: urlTab }) {
               {agents.map((agent, i) => (
                 <div key={i} className="card space-y-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
                       <FiBriefcase className="text-orange-600" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -504,14 +504,14 @@ function AgentView({ user, tab: urlTab }) {
   const displayList = tab === 'pending' ? pending : tab === 'reviewed' ? reviewed : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-lg font-bold text-gray-900">
             {tab === 'pending' ? 'Yêu cầu chờ xử lý' : tab === 'reviewed' ? 'Yêu cầu đã xử lý' : 'Tra cứu yêu cầu'}
           </h1>
-          <p className="text-gray-500 mt-1">{user.name || user.userId} — Xử lý yêu cầu bồi thường</p>
+          <p className="text-gray-500 mt-0.5">{user.name || user.userId} — Xử lý yêu cầu bồi thường</p>
         </div>
         <button onClick={loadAll} disabled={loading} className="btn-secondary flex items-center gap-2 text-sm">
           {loading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" /> : <FiRefreshCw />}
@@ -522,15 +522,15 @@ function AgentView({ user, tab: urlTab }) {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="card py-4">
-          <p className="text-2xl font-bold text-yellow-600">{pending.length}</p>
+          <p className="text-xl font-bold text-yellow-600">{pending.length}</p>
           <p className="text-sm text-gray-500 mt-0.5">Chờ xử lý</p>
         </div>
         <div className="card py-4">
-          <p className="text-2xl font-bold text-blue-600">{reviewed.length}</p>
+          <p className="text-xl font-bold text-blue-600">{reviewed.length}</p>
           <p className="text-sm text-gray-500 mt-0.5">Tôi đã xử lý</p>
         </div>
         <div className="card py-4">
-          <p className="text-2xl font-bold text-gray-600">{claims.length}</p>
+          <p className="text-xl font-bold text-gray-600">{claims.length}</p>
           <p className="text-sm text-gray-500 mt-0.5">Tổng claims</p>
         </div>
       </div>
@@ -542,8 +542,8 @@ function AgentView({ user, tab: urlTab }) {
             <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
           </div>
         ) : displayList.length === 0 ? (
-          <div className="card text-center py-12">
-            <FiDollarSign className="text-4xl text-gray-300 mx-auto mb-3" />
+          <div className="card text-center py-8">
+            <FiDollarSign className="text-2xl text-gray-300 mx-auto mb-3" />
             <p className="text-gray-400">{tab === 'pending' ? 'Không có yêu cầu chờ xử lý' : 'Chưa xử lý yêu cầu nào'}</p>
           </div>
         ) : (
@@ -660,11 +660,11 @@ function PatientView({ user }) {
   const rejected = claims.filter(c => (c.Value || c).status === 'rejected').length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bảo hiểm y tế</h1>
-          <p className="text-gray-500 mt-1">Quản lý yêu cầu bồi thường bảo hiểm</p>
+          <h1 className="text-lg font-bold text-gray-900">Bảo hiểm y tế</h1>
+          <p className="text-gray-500 mt-0.5">Quản lý yêu cầu bồi thường bảo hiểm</p>
         </div>
         {(isPatient || user.role === 'doctor') && (
           <button onClick={() => setShowCreate(!showCreate)} className="btn-primary flex items-center gap-2">
@@ -681,7 +681,7 @@ function PatientView({ user }) {
             { label: 'Từ chối',   value: rejected, cls: 'bg-red-50 border-red-200',       valCls: 'text-red-700' },
           ].map(s => (
             <div key={s.label} className={`rounded-xl border p-4 ${s.cls}`}>
-              <p className={`text-2xl font-bold ${s.valCls}`}>{s.value}</p>
+              <p className={`text-xl font-bold ${s.valCls}`}>{s.value}</p>
               <p className="text-sm text-gray-500 mt-0.5">{s.label}</p>
             </div>
           ))}
@@ -748,8 +748,8 @@ function PatientView({ user }) {
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
       ) : claims.length === 0 ? (
-        <div className="card text-center py-12">
-          <FiDollarSign className="text-4xl text-gray-300 mx-auto mb-3" />
+        <div className="card text-center py-8">
+          <FiDollarSign className="text-2xl text-gray-300 mx-auto mb-3" />
           <p className="text-gray-400">Chưa có yêu cầu bảo hiểm nào</p>
           {isPatient && (
             <button onClick={() => setShowCreate(true)} className="mt-4 btn-primary inline-flex items-center gap-2">

@@ -5,9 +5,11 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Auth
+// Auth & Profile
 export const registerPatient = (data) => api.post('/registerPatient', data)
 export const loginPatient = (data) => api.post('/loginPatient', data)
+export const updateProfile = (data) => api.post('/updateProfile', data)
+export const changePassword = (data) => api.post('/changePassword', data)
 
 // Records
 export const addRecord = (data) => api.post('/addRecord', data)

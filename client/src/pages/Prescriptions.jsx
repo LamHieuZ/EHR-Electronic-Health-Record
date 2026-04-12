@@ -16,7 +16,7 @@ function MedicationList({ prescription }) {
     <div className="space-y-3">
       {meds.map((m, i) => (
         <div key={i} className="flex items-start gap-3 p-3 bg-white rounded-xl border border-gray-100">
-          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+          <div className="w-7 h-7 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
             <FiPackage className="text-green-600 text-sm" />
           </div>
           <div className="flex-1 min-w-0">
@@ -114,11 +114,11 @@ export default function Prescriptions() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Đơn thuốc</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-lg font-bold text-gray-900">Đơn thuốc</h1>
+          <p className="text-gray-500 mt-0.5">
             {user.role === 'pharmacy' ? 'Xác nhận và cấp phát thuốc' : 'Xem danh sách đơn thuốc'}
           </p>
         </div>
@@ -155,12 +155,12 @@ export default function Prescriptions() {
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
         </div>
       ) : prescriptions.length === 0 ? (
-        <div className="card text-center py-12">
-          <FiActivity className="text-4xl text-gray-300 mx-auto mb-3" />
+        <div className="card text-center py-8">
+          <FiActivity className="text-2xl text-gray-300 mx-auto mb-3" />
           <p className="text-gray-400">Chưa có đơn thuốc nào</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {prescriptions.map((p, i) => {
             const val = p.Value || p
             const key = p.recordId || p.Key || `rx-${i}`
@@ -169,9 +169,9 @@ export default function Prescriptions() {
             return (
               <div key={i} className="card">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <FiActivity className="text-green-600" />
                     </div>
                     <div>
