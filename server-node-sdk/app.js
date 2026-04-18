@@ -415,6 +415,17 @@ app.post('/getMyPatients', async function (req, res, next){
     }
 });
 
+app.post('/getAllPatients', async function (req, res, next){
+    try {
+        const { userId } = req.body;
+        const all = await query.getQuery('getAllPatients', {}, userId);
+        const patients = Array.isArray(all) ? all : [];
+        res.status(200).send({ success: true, data: patients.map(p => ({ patientId: p.patientId, name: p.name || '', dob: p.dob || '', city: p.city || '' })) });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.post('/getPatientById', async function (req, res, next){
     try {
         const {userId, patientId} = req.body;
@@ -494,6 +505,63 @@ app.post('/revokeAccess', async function (req, res, next){
         const {userId, patientId, doctorIdToRevoke} = req.body;
         const result = await invoke.invokeTransaction('revokeAccess', {patientId, doctorIdToRevoke}, userId);
         res.status(200).send({ success: true, data: result});
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// SHARE RECORD - Benh nhan (hoac BV so huu) chia se record sang sharedClinicalCollection
+// De BV khac trong channel doc duoc diagnosis/prescription khi chuyen vien
+// ===========================================================================================
+app.post('/shareRecord', async function (req, res, next){
+    try {
+        const {userId, patientId, recordId} = req.body;
+        if (!patientId || !recordId) {
+            throw new Error('Missing patientId or recordId');
+        }
+        const result = await invoke.invokeTransaction('shareRecordWithHospital',
+            {patientId, recordId}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/unshareRecord', async function (req, res, next){
+    try {
+        const {userId, patientId, recordId} = req.body;
+        if (!patientId || !recordId) {
+            throw new Error('Missing patientId or recordId');
+        }
+        const result = await invoke.invokeTransaction('unshareRecordFromHospital',
+            {patientId, recordId}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Chia se TOAN BO history cua 1 benh nhan 1 lan (export EHR / chuyen vien)
+app.post('/shareAllRecords', async function (req, res, next){
+    try {
+        const {userId, patientId} = req.body;
+        if (!patientId) throw new Error('Missing patientId');
+        const result = await invoke.invokeTransaction('shareAllRecordsWithHospital',
+            {patientId}, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/unshareAllRecords', async function (req, res, next){
+    try {
+        const {userId, patientId} = req.body;
+        if (!patientId) throw new Error('Missing patientId');
+        const result = await invoke.invokeTransaction('unshareAllRecordsFromHospital',
+            {patientId}, userId);
+        res.status(200).send({ success: true, data: result });
     } catch (error) {
         next(error);
     }

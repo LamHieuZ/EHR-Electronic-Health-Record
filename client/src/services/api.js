@@ -21,9 +21,16 @@ export const queryHistoryOfAsset = (data) => api.post('/queryHistoryOfAsset', da
 // Access Control
 export const getAllPrescriptions = (data) => api.post('/getAllPrescriptions', data)
 export const getMyPatients = (data) => api.post('/getMyPatients', data)
+export const getAllPatients = (data) => api.post('/getAllPatients', data)
 export const getPatientById = (data) => api.post('/getPatientById', data)
 export const grantAccess = (data) => api.post('/grantAccess', data)
 export const revokeAccess = (data) => api.post('/revokeAccess', data)
+
+// Cross-hospital sharing (PDC)
+export const shareRecord = (data) => api.post('/shareRecord', data)
+export const unshareRecord = (data) => api.post('/unshareRecord', data)
+export const shareAllRecords = (data) => api.post('/shareAllRecords', data)
+export const unshareAllRecords = (data) => api.post('/unshareAllRecords', data)
 
 // Prescriptions
 export const getPrescriptionsByPatient = (data) => api.post('/getPrescriptionsByPatient', data)

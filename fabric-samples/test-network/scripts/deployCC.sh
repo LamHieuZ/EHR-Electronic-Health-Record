@@ -68,16 +68,27 @@ function checkPrereqs() {
 #check for prerequisites
 checkPrereqs
 
+## detect whether Org3 is part of the network
+ORG3_ENABLED="false"
+if [ -d "${PWD}/organizations/peerOrganizations/org3.example.com" ]; then
+  ORG3_ENABLED="true"
+  infoln "Org3 detected — chaincode will also be deployed to peer0.org3"
+fi
+
 ## package the chaincode
-./scripts/packageCC.sh $CC_NAME $CC_SRC_PATH $CC_SRC_LANGUAGE $CC_VERSION 
+./scripts/packageCC.sh $CC_NAME $CC_SRC_PATH $CC_SRC_LANGUAGE $CC_VERSION
 
 PACKAGE_ID=$(peer lifecycle chaincode calculatepackageid ${CC_NAME}.tar.gz)
 
-## Install chaincode on peer0.org1 and peer0.org2
+## Install chaincode on peer0.org1, peer0.org2 (and peer0.org3 when present)
 infoln "Installing chaincode on peer0.org1..."
 installChaincode 1
 infoln "Install chaincode on peer0.org2..."
 installChaincode 2
+if [ "$ORG3_ENABLED" = "true" ]; then
+  infoln "Install chaincode on peer0.org3..."
+  installChaincode 3
+fi
 
 resolveSequence
 
@@ -89,30 +100,58 @@ approveForMyOrg 1
 
 ## check whether the chaincode definition is ready to be committed
 ## expect org1 to have approved and org2 not to
-checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": false"
-checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": false"
+if [ "$ORG3_ENABLED" = "true" ]; then
+  checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": false" "\"Org3MSP\": false"
+  checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": false" "\"Org3MSP\": false"
+else
+  checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": false"
+  checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": false"
+fi
 
 ## now approve also for org2
 approveForMyOrg 2
 
-## check whether the chaincode definition is ready to be committed
-## expect them both to have approved
-checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": true"
-checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": true"
+if [ "$ORG3_ENABLED" = "true" ]; then
+  ## approve for org3 too
+  approveForMyOrg 3
 
-## now that we know for sure both orgs have approved, commit the definition
-commitChaincodeDefinition 1 2
+  ## check whether the chaincode definition is ready to be committed
+  ## expect all three orgs to have approved
+  checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": true"
+  checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": true"
+  checkCommitReadiness 3 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": true"
 
-## query on both orgs to see that the definition committed successfully
-queryCommitted 1
-queryCommitted 2
+  ## commit with endorsements from all three orgs
+  commitChaincodeDefinition 1 2 3
+
+  ## query on all three orgs to see that the definition committed successfully
+  queryCommitted 1
+  queryCommitted 2
+  queryCommitted 3
+else
+  ## check whether the chaincode definition is ready to be committed
+  ## expect them both to have approved
+  checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": true"
+  checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": true"
+
+  ## now that we know for sure both orgs have approved, commit the definition
+  commitChaincodeDefinition 1 2
+
+  ## query on both orgs to see that the definition committed successfully
+  queryCommitted 1
+  queryCommitted 2
+fi
 
 ## Invoke the chaincode - this does require that the chaincode have the 'initLedger'
 ## method defined
 if [ "$CC_INIT_FCN" = "NA" ]; then
   infoln "Chaincode initialization is not required"
 else
-  chaincodeInvokeInit 1 2
+  if [ "$ORG3_ENABLED" = "true" ]; then
+    chaincodeInvokeInit 1 2 3
+  else
+    chaincodeInvokeInit 1 2
+  fi
 fi
 
 exit 0

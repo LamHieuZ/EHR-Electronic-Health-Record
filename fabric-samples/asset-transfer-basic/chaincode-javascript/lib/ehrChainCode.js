@@ -4,6 +4,7 @@
 const stringify  = require('json-stringify-deterministic');
 const sortKeysRecursive  = require('sort-keys-recursive');
 const { Contract } = require('fabric-contract-api');
+const crypto = require('crypto');
 
 class ehrChainCode extends Contract {
 
@@ -86,6 +87,382 @@ class ehrChainCode extends Contract {
     // Danh sach MSP cua cac to chuc benh vien (Org1, Org3, ...)
     getHospitalMSPs() {
         return ['Org1MSP', 'Org3MSP'];
+    }
+
+    // Kiem tra benh nhan co cap quyen cho bat ky bac si nao thuoc benh vien hospitalId khong
+    // Dung de xac dinh hospital admin co duoc xem ho so benh nhan do hay khong
+    async patientBelongsToHospital(ctx, patient, hospitalId) {
+        if (!hospitalId || !Array.isArray(patient.authorizedDoctors)) {
+            return false;
+        }
+        for (const doctorId of patient.authorizedDoctors) {
+            const doctorJSON = await ctx.stub.getState(`doctor-${doctorId}`);
+            if (!doctorJSON || doctorJSON.length === 0) continue;
+            const doctor = JSON.parse(doctorJSON.toString());
+            if (doctor.hospitalId === hospitalId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ACL: kiem tra caller co quyen doc ho so cua benh nhan khong
+    // - patient: chi xem cua chinh minh
+    // - doctor: phai duoc benh nhan cap quyen (nam trong authorizedDoctors)
+    // - hospital admin: chi duoc xem benh nhan co it nhat 1 bac si thuoc BV minh da duoc cap quyen
+    // - cac role khac: tu choi
+    async assertCanReadPatient(ctx, patient) {
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        if (role === 'patient' && callerId === patient.patientId) {
+            return;
+        }
+        if (role === 'doctor' && Array.isArray(patient.authorizedDoctors)
+            && patient.authorizedDoctors.includes(callerId)) {
+            return;
+        }
+        if (role === 'hospital') {
+            // callerId cua hospital admin chinh la hospitalId cua BV do
+            const belongs = await this.patientBelongsToHospital(ctx, patient, callerId);
+            if (belongs) {
+                return;
+            }
+            throw new Error(`Access denied: hospital ${callerId} has no authorized doctor for patient ${patient.patientId}`);
+        }
+        if (role === 'pharmacy') {
+            // Pharmacy can xem prescription de dispense.
+            // PDC se tu loc: pharmacy Org1 chi thay prescription cua BV1, v.v.
+            const { hospitalId: pharmHospital } = this.getCallerAttributes(ctx);
+            const belongs = await this.patientBelongsToHospital(ctx, patient, pharmHospital);
+            if (belongs) {
+                return;
+            }
+            throw new Error(`Access denied: pharmacy ${callerId} (hospital ${pharmHospital}) has no link to patient ${patient.patientId}`);
+        }
+        throw new Error(`Access denied: ${role} ${callerId} is not authorized to read patient ${patient.patientId}`);
+    }
+
+    // Tai patient tu state va kiem tra ACL truoc khi tra ve
+    async loadPatientWithAcl(ctx, patientId) {
+        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
+        if (!patientJSON || patientJSON.length === 0) {
+            throw new Error(`Patient ${patientId} not found`);
+        }
+        const patient = JSON.parse(patientJSON.toString());
+        await this.assertCanReadPatient(ctx, patient);
+        return patient;
+    }
+
+    // ===========================================================================================
+    // PRIVATE DATA COLLECTION (PDC) HELPERS
+    // ===========================================================================================
+
+    // Map hospitalId -> collection name. BV1 & BV3 co collection rieng.
+    // Du lieu lam sang (diagnosis, prescription) chi luu o collection cua BV dieu tri.
+    getCollectionForHospital(hospitalId) {
+        const map = {
+            'hospitalAdmin': 'hospital1Collection',   // BV1 (Org1)
+            'hospital3Admin': 'hospital3Collection'   // BV3 (Org3)
+        };
+        return map[hospitalId] || null;
+    }
+
+    // Bam SHA-256 cua private part - dung de luu tren public ledger cho audit
+    hashPrivatePart(privatePart) {
+        const canonical = stringify(sortKeysRecursive(privatePart));
+        return crypto.createHash('sha256').update(canonical).digest('hex');
+    }
+
+    // Tra ve collection rieng cua record (noi luu du lieu goc, chi BV dieu tri doc duoc)
+    // va collection chia se (shared, khi record da duoc share cho BV khac)
+    getReadableCollections(publicRecord) {
+        const owning = this.getCollectionForHospital(publicRecord.hospitalId);
+        const collections = [];
+        if (owning) collections.push(owning);
+        collections.push('sharedClinicalCollection');
+        return collections;
+    }
+
+    // Thu doc private data tu 1 collection. Tra ve null neu peer khong thuoc
+    // collection hoac chua co du lieu.
+    async tryGetPrivateData(ctx, collection, key) {
+        try {
+            const bytes = await ctx.stub.getPrivateData(collection, key);
+            if (bytes && bytes.length > 0) return bytes;
+            return null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    // Ghep public record (tu ledger) voi private part (tu PDC).
+    // Thu lan luot: collection cua BV so huu -> sharedClinicalCollection.
+    // Neu caller khong thuoc collection nao, tra ve metadata + privateDataVisible=false.
+    async loadRecordWithPrivate(ctx, publicRecord) {
+        const recordKey = ctx.stub.createCompositeKey('record', [publicRecord.patientId, publicRecord.recordId]);
+        const collections = this.getReadableCollections(publicRecord);
+
+        for (const collection of collections) {
+            const bytes = await this.tryGetPrivateData(ctx, collection, recordKey);
+            if (bytes) {
+                const privatePart = JSON.parse(bytes.toString());
+                return {
+                    ...publicRecord,
+                    ...privatePart,
+                    privateDataVisible: true,
+                    privateSource: collection
+                };
+            }
+        }
+
+        return {
+            ...publicRecord,
+            diagnosis: null,
+            prescription: null,
+            privateDataVisible: false
+        };
+    }
+
+    // Chia se private data cua 1 record sang sharedClinicalCollection de BV khac doc duoc.
+    // Chi cho phep:
+    //   - Chinh benh nhan so huu record
+    //   - Hospital admin cua BV so huu record
+    // Transaction phai duoc endorse boi peer cua BV so huu (vi can doc collection goc).
+    async shareRecordWithHospital(ctx, args) {
+        const { patientId, recordId } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
+        const publicJSON = await ctx.stub.getState(recordKey);
+        if (!publicJSON || publicJSON.length === 0) {
+            throw new Error(`Record ${recordId} not found for patient ${patientId}`);
+        }
+        const publicRecord = JSON.parse(publicJSON.toString());
+
+        if (role === 'patient') {
+            if (callerId !== patientId) {
+                throw new Error('Only the patient owner can share this record');
+            }
+        } else if (role === 'hospital') {
+            if (callerId !== publicRecord.hospitalId) {
+                throw new Error(`Hospital ${callerId} cannot share record owned by ${publicRecord.hospitalId}`);
+            }
+        } else {
+            throw new Error(`Role ${role} is not allowed to share records`);
+        }
+
+        const sourceCollection = this.getCollectionForHospital(publicRecord.hospitalId);
+        if (!sourceCollection) {
+            throw new Error(`No source collection for hospital ${publicRecord.hospitalId}`);
+        }
+
+        // Doc private data tu collection goc - peer endorse phai thuoc BV so huu
+        const privBytes = await ctx.stub.getPrivateData(sourceCollection, recordKey);
+        if (!privBytes || privBytes.length === 0) {
+            throw new Error(`Cannot read private data from ${sourceCollection}. Ensure the transaction is endorsed by a peer of the owning hospital.`);
+        }
+
+        // Copy sang shared collection
+        await ctx.stub.putPrivateData('sharedClinicalCollection', recordKey, privBytes);
+
+        // Cap nhat public record de danh dau da share
+        publicRecord.sharedCollections = publicRecord.sharedCollections || [];
+        if (!publicRecord.sharedCollections.includes('sharedClinicalCollection')) {
+            publicRecord.sharedCollections.push('sharedClinicalCollection');
+        }
+        publicRecord.sharedAt = this.getTimestamp(ctx);
+        publicRecord.sharedBy = callerId;
+        publicRecord.sharedByRole = role;
+
+        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(publicRecord))));
+
+        return JSON.stringify({
+            message: `Record ${recordId} shared via sharedClinicalCollection`,
+            recordId,
+            sharedBy: callerId
+        });
+    }
+
+    // Chia se TOAN BO history cua 1 benh nhan 1 lan. Dung khi bo chuyen vien / export EHR.
+    // - Patient: share records cua chinh minh (peer endorser chi doc duoc PDC cua org minh
+    //   nen records thuoc BV khac se bi skip kem ly do)
+    // - Hospital admin: chi share duoc records cua BV minh
+    async shareAllRecordsWithHospital(ctx, args) {
+        const { patientId } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        if (role === 'patient') {
+            if (callerId !== patientId) {
+                throw new Error('Only the patient owner can share their records');
+            }
+        } else if (role !== 'hospital') {
+            throw new Error(`Role ${role} cannot bulk-share records`);
+        }
+
+        const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
+        const shared = [];
+        const skipped = [];
+        const timestamp = this.getTimestamp(ctx);
+
+        let res = await iterator.next();
+        while (!res.done) {
+            const publicRecord = JSON.parse(res.value.value.toString('utf8'));
+            const recordId = publicRecord.recordId;
+            const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
+
+            // Hospital admin chi share records cua BV minh
+            if (role === 'hospital' && callerId !== publicRecord.hospitalId) {
+                skipped.push({ recordId, reason: `not owned by hospital ${callerId}` });
+                res = await iterator.next();
+                continue;
+            }
+
+            const sourceCollection = this.getCollectionForHospital(publicRecord.hospitalId);
+            if (!sourceCollection) {
+                skipped.push({ recordId, reason: 'no source collection mapped' });
+                res = await iterator.next();
+                continue;
+            }
+
+            // Neu record da share roi -> bo qua (idempotent)
+            if (Array.isArray(publicRecord.sharedCollections)
+                && publicRecord.sharedCollections.includes('sharedClinicalCollection')) {
+                skipped.push({ recordId, reason: 'already shared' });
+                res = await iterator.next();
+                continue;
+            }
+
+            const privBytes = await ctx.stub.getPrivateData(sourceCollection, recordKey);
+            if (!privBytes || privBytes.length === 0) {
+                skipped.push({
+                    recordId,
+                    reason: `private data not accessible (peer endorser may not belong to ${publicRecord.hospitalId})`
+                });
+                res = await iterator.next();
+                continue;
+            }
+
+            await ctx.stub.putPrivateData('sharedClinicalCollection', recordKey, privBytes);
+
+            publicRecord.sharedCollections = publicRecord.sharedCollections || [];
+            publicRecord.sharedCollections.push('sharedClinicalCollection');
+            publicRecord.sharedAt = timestamp;
+            publicRecord.sharedBy = callerId;
+            publicRecord.sharedByRole = role;
+
+            await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(publicRecord))));
+            shared.push(recordId);
+
+            res = await iterator.next();
+        }
+        await iterator.close();
+
+        return JSON.stringify({
+            message: `Shared ${shared.length} records, skipped ${skipped.length}`,
+            sharedCount: shared.length,
+            skippedCount: skipped.length,
+            shared,
+            skipped
+        });
+    }
+
+    // Thu hoi share cho TOAN BO records da share cua 1 benh nhan
+    async unshareAllRecordsFromHospital(ctx, args) {
+        const { patientId } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        if (role === 'patient') {
+            if (callerId !== patientId) {
+                throw new Error('Only the patient owner can unshare their records');
+            }
+        } else if (role !== 'hospital') {
+            throw new Error(`Role ${role} cannot bulk-unshare records`);
+        }
+
+        const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
+        const unshared = [];
+        const skipped = [];
+        const timestamp = this.getTimestamp(ctx);
+
+        let res = await iterator.next();
+        while (!res.done) {
+            const publicRecord = JSON.parse(res.value.value.toString('utf8'));
+            const recordId = publicRecord.recordId;
+            const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
+
+            if (role === 'hospital' && callerId !== publicRecord.hospitalId) {
+                skipped.push({ recordId, reason: `not owned by hospital ${callerId}` });
+                res = await iterator.next();
+                continue;
+            }
+
+            if (!Array.isArray(publicRecord.sharedCollections)
+                || !publicRecord.sharedCollections.includes('sharedClinicalCollection')) {
+                skipped.push({ recordId, reason: 'not currently shared' });
+                res = await iterator.next();
+                continue;
+            }
+
+            await ctx.stub.deletePrivateData('sharedClinicalCollection', recordKey);
+
+            publicRecord.sharedCollections = publicRecord.sharedCollections
+                .filter(c => c !== 'sharedClinicalCollection');
+            publicRecord.unsharedAt = timestamp;
+            publicRecord.unsharedBy = callerId;
+
+            await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(publicRecord))));
+            unshared.push(recordId);
+
+            res = await iterator.next();
+        }
+        await iterator.close();
+
+        return JSON.stringify({
+            message: `Unshared ${unshared.length} records, skipped ${skipped.length}`,
+            unsharedCount: unshared.length,
+            skippedCount: skipped.length,
+            unshared,
+            skipped
+        });
+    }
+
+    // Thu hoi share: xoa private data khoi sharedClinicalCollection
+    async unshareRecordFromHospital(ctx, args) {
+        const { patientId, recordId } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
+        const publicJSON = await ctx.stub.getState(recordKey);
+        if (!publicJSON || publicJSON.length === 0) {
+            throw new Error(`Record ${recordId} not found for patient ${patientId}`);
+        }
+        const publicRecord = JSON.parse(publicJSON.toString());
+
+        if (role === 'patient') {
+            if (callerId !== patientId) {
+                throw new Error('Only the patient owner can unshare this record');
+            }
+        } else if (role === 'hospital') {
+            if (callerId !== publicRecord.hospitalId) {
+                throw new Error(`Hospital ${callerId} cannot unshare record owned by ${publicRecord.hospitalId}`);
+            }
+        } else {
+            throw new Error(`Role ${role} is not allowed to unshare records`);
+        }
+
+        await ctx.stub.deletePrivateData('sharedClinicalCollection', recordKey);
+
+        publicRecord.sharedCollections = (publicRecord.sharedCollections || [])
+            .filter(c => c !== 'sharedClinicalCollection');
+        publicRecord.unsharedAt = this.getTimestamp(ctx);
+        publicRecord.unsharedBy = callerId;
+
+        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(publicRecord))));
+
+        return JSON.stringify({
+            message: `Record ${recordId} unshared from sharedClinicalCollection`,
+            recordId
+        });
     }
 
     // ===========================================================================================
@@ -474,6 +851,8 @@ class ehrChainCode extends Contract {
     // Bac si them ho so benh an - DU LIEU CHUAN HOA
     // diagnosis phai dung ma ICD-10, prescription phai dung ma ATC code
     // Chi bac si duoc benh nhan cap quyen moi co the them
+    // Public part (metadata + hash) luu tren ledger; private part (diagnosis, prescription)
+    // luu o PDC cua BV dieu tri -> peer BV khac khong nhan duoc du lieu goc.
     async addRecord(ctx, args) {
         const { patientId, diagnosis, prescription } = JSON.parse(args);
         const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
@@ -498,32 +877,44 @@ class ehrChainCode extends Contract {
         // Validate prescription theo chuan ATC code
         this.validatePrescription(prescription);
 
+        const collection = this.getCollectionForHospital(hospitalId);
+        if (!collection) {
+            throw new Error(`No private data collection mapped for hospital ${hospitalId}`);
+        }
+
         const txId = ctx.stub.getTxID();
         const recordId = `R-${txId}`;
         const timestamp = this.getTimestamp(ctx);
 
         const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
 
-        const record = {
+        // Tach public / private
+        const privatePart = { diagnosis, prescription };
+        const privateHash = this.hashPrivatePart(privatePart);
+
+        const publicRecord = {
             recordId,
             patientId,
             doctorId: callerId,
             hospitalId: hospitalId || '',
-            diagnosis,
-            prescription,
+            privateHash,
+            privateCollection: collection,
             timestamp,
             updatedAt: timestamp,
             version: 1
         };
 
-        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(record))));
-        return JSON.stringify({ message: `Record ${recordId} added for patient ${patientId}`, recordId });
+        await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(publicRecord))));
+        await ctx.stub.putPrivateData(collection, recordKey, Buffer.from(stringify(sortKeysRecursive(privatePart))));
+
+        return JSON.stringify({ message: `Record ${recordId} added for patient ${patientId}`, recordId, collection });
     }
 
     // Bac si cap nhat ho so benh an - phai la bac si da tao record hoac duoc cap quyen
+    // Chi BV so huu record moi sua duoc private part (diagnosis, prescription)
     async updateRecord(ctx, args) {
         const { patientId, recordId, diagnosis, prescription } = JSON.parse(args);
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
 
         if (role !== 'doctor') {
             throw new Error('Only doctors can update records');
@@ -539,30 +930,49 @@ class ehrChainCode extends Contract {
             throw new Error(`Doctor ${callerId} is not authorized for patient ${patientId}`);
         }
 
-        // Lay record hien tai
+        // Lay public record hien tai
         const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
         const recordJSON = await ctx.stub.getState(recordKey);
         if (!recordJSON || recordJSON.length === 0) {
             throw new Error(`Record ${recordId} not found for patient ${patientId}`);
         }
-
         const existingRecord = JSON.parse(recordJSON.toString());
+
+        // Chi BV so huu record moi duoc sua
+        if (existingRecord.hospitalId !== hospitalId) {
+            throw new Error(`Doctor from hospital ${hospitalId} cannot update record owned by ${existingRecord.hospitalId}`);
+        }
+
+        const collection = existingRecord.privateCollection || this.getCollectionForHospital(existingRecord.hospitalId);
+        if (!collection) {
+            throw new Error(`No private collection for record ${recordId}`);
+        }
+
+        // Load private part hien tai de merge
+        const privBytes = await ctx.stub.getPrivateData(collection, recordKey);
+        const privatePart = (privBytes && privBytes.length > 0)
+            ? JSON.parse(privBytes.toString())
+            : { diagnosis: null, prescription: null };
 
         // Validate du lieu moi neu co
         if (diagnosis) {
             this.validateDiagnosis(diagnosis);
-            existingRecord.diagnosis = diagnosis;
+            privatePart.diagnosis = diagnosis;
         }
         if (prescription) {
             this.validatePrescription(prescription);
-            existingRecord.prescription = prescription;
+            privatePart.prescription = prescription;
         }
 
+        // Cap nhat hash + metadata tren public ledger
+        existingRecord.privateHash = this.hashPrivatePart(privatePart);
         existingRecord.updatedAt = this.getTimestamp(ctx);
         existingRecord.updatedBy = callerId;
         existingRecord.version = (existingRecord.version || 1) + 1;
 
         await ctx.stub.putState(recordKey, Buffer.from(stringify(sortKeysRecursive(existingRecord))));
+        await ctx.stub.putPrivateData(collection, recordKey, Buffer.from(stringify(sortKeysRecursive(privatePart))));
+
         return JSON.stringify({ message: `Record ${recordId} updated`, version: existingRecord.version });
     }
 
@@ -571,14 +981,19 @@ class ehrChainCode extends Contract {
     // ===========================================================================================
 
     // Lay tat ca ho so cua 1 benh nhan
+    // Tra ve: public metadata + (diagnosis/prescription neu caller thuoc org duoc PDC phuc vu)
     async getAllRecordsByPatientId(ctx, args) {
         const { patientId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
         const results = [];
 
         let _res = await iterator.next();
         while (!_res.done) {
-            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            const publicRecord = JSON.parse(_res.value.value.toString('utf8'));
+            const merged = await this.loadRecordWithPrivate(ctx, publicRecord);
+            results.push(merged);
             _res = await iterator.next();
         }
         await iterator.close();
@@ -589,6 +1004,8 @@ class ehrChainCode extends Contract {
     // Lay 1 ho so cu the theo ID
     async getRecordById(ctx, args) {
         const { patientId, recordId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
         const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
         const recordJSON = await ctx.stub.getState(recordKey);
 
@@ -596,28 +1013,36 @@ class ehrChainCode extends Contract {
             throw new Error(`Record ${recordId} not found for patient ${patientId}`);
         }
 
-        return recordJSON.toString();
+        const publicRecord = JSON.parse(recordJSON.toString());
+        const merged = await this.loadRecordWithPrivate(ctx, publicRecord);
+        return JSON.stringify(merged);
     }
 
     // Lay thong tin benh nhan theo ID
     async getPatientById(ctx, args) {
         const { patientId } = JSON.parse(args);
-        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
-        if (!patientJSON || patientJSON.length === 0) {
-            throw new Error(`Patient ${patientId} not found`);
-        }
-        return patientJSON.toString();
+        const patient = await this.loadPatientWithAcl(ctx, patientId);
+        return JSON.stringify(patient);
     }
 
     // Lay tat ca benh nhan
     async getAllPatients(ctx) {
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+        if (role !== 'hospital') {
+            throw new Error('Only hospital admin can list all patients');
+        }
+
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
 
         let _res = await iterator.next();
         while (!_res.done) {
             if (_res.value.key.startsWith('patient-')) {
-                results.push(JSON.parse(_res.value.value.toString()));
+                const patient = JSON.parse(_res.value.value.toString());
+                // chi liet ke benh nhan co it nhat 1 bac si thuoc BV nay duoc cap quyen
+                if (await this.patientBelongsToHospital(ctx, patient, callerId)) {
+                    results.push(patient);
+                }
             }
             _res = await iterator.next();
         }
@@ -718,6 +1143,25 @@ class ehrChainCode extends Contract {
     // Lay tat ca ho so do 1 bac si tao
     async getRecordsByDoctor(ctx, args) {
         const { doctorId } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        // Chinh bac si do: OK
+        // Hospital admin: chi duoc xem neu doctor do thuoc BV minh
+        if (role === 'doctor' && callerId === doctorId) {
+            // OK
+        } else if (role === 'hospital') {
+            const doctorJSON = await ctx.stub.getState(`doctor-${doctorId}`);
+            if (!doctorJSON || doctorJSON.length === 0) {
+                throw new Error(`Doctor ${doctorId} not found`);
+            }
+            const doctor = JSON.parse(doctorJSON.toString());
+            if (doctor.hospitalId !== callerId) {
+                throw new Error(`Access denied: hospital ${callerId} cannot read records of doctor from another hospital`);
+            }
+        } else {
+            throw new Error(`Access denied: ${role} ${callerId} cannot read records of doctor ${doctorId}`);
+        }
+
         const results = [];
         const iterator = await ctx.stub.getStateByRange('', '');
 
@@ -843,6 +1287,31 @@ class ehrChainCode extends Contract {
     // Xem lich su thay doi cua 1 asset
     async queryHistoryOfAsset(ctx, args) {
         const { assetId } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        // Patient: chi xem lich su cua chinh ho so minh
+        // Hospital admin: chi xem lich su cua benh nhan ma BV minh co bac si duoc cap quyen
+        // Cac role khac: tu choi
+        if (role === 'patient' && assetId === `patient-${callerId}`) {
+            // OK
+        } else if (role === 'hospital' && assetId.startsWith('patient-')) {
+            const patientId = assetId.substring('patient-'.length);
+            const patientJSON = await ctx.stub.getState(assetId);
+            if (!patientJSON || patientJSON.length === 0) {
+                throw new Error(`Patient ${patientId} not found`);
+            }
+            const patient = JSON.parse(patientJSON.toString());
+            const belongs = await this.patientBelongsToHospital(ctx, patient, callerId);
+            if (!belongs) {
+                throw new Error(`Access denied: hospital ${callerId} cannot view history of patient ${patientId}`);
+            }
+        } else if (role === 'hospital') {
+            // Cac asset khac (hospital-, doctor- thuoc BV minh, ...): tam thoi cho phep
+            // TODO: siet chat hon neu can (vd chi xem doctor-/pharmacy- cua BV minh)
+        } else {
+            throw new Error(`Access denied: ${role} ${callerId} cannot view history of ${assetId}`);
+        }
+
         const iterator = await ctx.stub.getHistoryForKey(assetId);
         const results = [];
 
@@ -878,27 +1347,32 @@ class ehrChainCode extends Contract {
     // PRESCRIPTION MANAGEMENT - Quan ly don thuoc
     // ===========================================================================================
 
-    // Lay tat ca don thuoc cua 1 benh nhan (trich xuat tu records)
+    // Lay tat ca don thuoc cua 1 benh nhan (trich xuat tu records + PDC)
+    // Chi tra ve prescription cho caller thuoc org duoc PDC phuc vu; cac records khac bi loc ra.
     async getPrescriptionsByPatient(ctx, args) {
         const { patientId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
         const iterator = await ctx.stub.getStateByPartialCompositeKey('record', [patientId]);
         const prescriptions = [];
 
         let _res = await iterator.next();
         while (!_res.done) {
-            const record = JSON.parse(_res.value.value.toString('utf8'));
-            if (record.prescription && record.prescription.medications) {
+            const publicRecord = JSON.parse(_res.value.value.toString('utf8'));
+            const merged = await this.loadRecordWithPrivate(ctx, publicRecord);
+
+            if (merged.privateDataVisible && merged.prescription && merged.prescription.medications) {
                 prescriptions.push({
-                    recordId: record.recordId,
-                    patientId: record.patientId,
-                    doctorId: record.doctorId,
-                    prescription: record.prescription,
-                    diagnosis: record.diagnosis.primary,
-                    timestamp: record.timestamp,
-                    dispensed: record.dispensed || false,
-                    dispensedBy: record.dispensedBy || null,
-                    dispensedAt: record.dispensedAt || null,
-                    dispensedNotes: record.dispensedNotes || null,
+                    recordId: merged.recordId,
+                    patientId: merged.patientId,
+                    doctorId: merged.doctorId,
+                    prescription: merged.prescription,
+                    diagnosis: merged.diagnosis && merged.diagnosis.primary,
+                    timestamp: merged.timestamp,
+                    dispensed: merged.dispensed || false,
+                    dispensedBy: merged.dispensedBy || null,
+                    dispensedAt: merged.dispensedAt || null,
+                    dispensedNotes: merged.dispensedNotes || null,
                 });
             }
             _res = await iterator.next();

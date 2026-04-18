@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { emergencyAccess, getEmergencyLogs, getMyPatients } from '../services/api'
+import { emergencyAccess, getEmergencyLogs, getAllPatients } from '../services/api'
 import { toast } from 'react-toastify'
 import {
   FiAlertTriangle, FiSearch, FiClock, FiRefreshCw,
@@ -24,7 +24,7 @@ function DoctorView({ user }) {
   const loadPatients = async () => {
     setLoadingPatients(true)
     try {
-      const res = await getMyPatients({ userId: user.userId })
+      const res = await getAllPatients({ userId: user.userId })
       const raw = res.data?.data
       setPatients(Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []))
     } catch { /* ignore */ }
