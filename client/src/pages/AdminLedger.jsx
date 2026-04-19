@@ -1274,7 +1274,7 @@ export default function AdminLedger() {
   const { user } = useAuth()
   const location = useLocation()
 
-  const isHospitalAdmin = ['hospitalAdmin', 'hospital3Admin'].includes(user.userId)
+  const isHospitalAdmin = ['hospitalAdmin', 'hospital2Admin'].includes(user.userId)
   if (user.role === 'hospital' && !isHospitalAdmin) {
     return <HospitalView user={user} />
   }

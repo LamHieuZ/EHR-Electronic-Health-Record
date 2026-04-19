@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { registerPatient } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiActivity, FiUserPlus, FiCalendar, FiMapPin, FiArrowLeft, FiCopy, FiArrowRight, FiCheck, FiLock } from 'react-icons/fi'
+import { FiActivity, FiUserPlus, FiCalendar, FiMapPin, FiArrowLeft, FiCopy, FiArrowRight, FiCheck, FiLock, FiChevronDown, FiChevronUp, FiPhone, FiHeart, FiCreditCard } from 'react-icons/fi'
 
 function generatePatientId(name) {
   const normalized = name
@@ -14,30 +14,44 @@ function generatePatientId(name) {
 }
 
 export default function Register() {
-  const [form, setForm] = useState({ name: '', dob: '', city: '', password: '', confirmPassword: '' })
+  const [form, setForm] = useState({
+    name: '', dob: '', city: '', password: '', confirmPassword: '',
+    // Tier 1 fields
+    gender: '', phone: '', idCard: '', bhytNumber: '', bloodType: '',
+    allergies: '', chronicConditions: ''
+  })
   const [generatedId, setGeneratedId] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showMedical, setShowMedical] = useState(false)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.name) {
-      toast.error('Vui long nhap ho ten')
-      return
-    }
-    if (!form.password || form.password.length < 4) {
-      toast.error('Mat khau phai co it nhat 4 ky tu')
-      return
-    }
-    if (form.password !== form.confirmPassword) {
-      toast.error('Mat khau xac nhan khong khop')
-      return
-    }
+    if (!form.name) { toast.error('Vui long nhap ho ten'); return }
+    if (!form.password || form.password.length < 4) { toast.error('Mat khau phai co it nhat 4 ky tu'); return }
+    if (form.password !== form.confirmPassword) { toast.error('Mat khau xac nhan khong khop'); return }
     setLoading(true)
     const patientId = generatePatientId(form.name)
     try {
-      const res = await registerPatient({ userId: patientId, name: form.name, dob: form.dob, city: form.city, password: form.password })
+      // Parse comma-separated strings thanh array
+      const allergies = form.allergies.trim()
+        ? form.allergies.split(',').map(s => s.trim()).filter(Boolean) : []
+      const chronicConditions = form.chronicConditions.trim()
+        ? form.chronicConditions.split(',').map(s => s.trim()).filter(Boolean) : []
+
+      const payload = {
+        userId: patientId,
+        name: form.name, dob: form.dob, city: form.city,
+        password: form.password,
+        gender: form.gender || undefined,
+        phone: form.phone || undefined,
+        idCard: form.idCard || undefined,
+        bhytNumber: form.bhytNumber || undefined,
+        bloodType: form.bloodType || undefined,
+        allergies, chronicConditions
+      }
+      const res = await registerPatient(payload)
       if (res.data.statusCode === 200 || res.data.userID) {
         setGeneratedId(patientId)
         toast.success('Dang ky thanh cong!', { autoClose: 3000 })
@@ -45,7 +59,7 @@ export default function Register() {
         toast.error(res.data.error || 'Dang ky that bai')
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Loi ket noi server')
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Loi ket noi server')
     } finally {
       setLoading(false)
     }
@@ -213,6 +227,121 @@ export default function Register() {
                         minLength={4}
                       />
                     </div>
+                  </div>
+
+                  {/* Thong tin y te - Tier 1 optional */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowMedical(!showMedical)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-gray-300 transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FiHeart className="text-emerald-400" />
+                        Thong tin y te (tuy chon)
+                      </span>
+                      {showMedical ? <FiChevronUp /> : <FiChevronDown />}
+                    </button>
+
+                    {showMedical && (
+                      <div className="mt-3 space-y-3 p-4 bg-white/5 border border-white/10 rounded-xl">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1.5">Gioi tinh</label>
+                            <select
+                              value={form.gender}
+                              onChange={(e) => update('gender', e.target.value)}
+                              className="dark-select w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                            >
+                              <option value="">--</option>
+                              <option value="male">Nam</option>
+                              <option value="female">Nu</option>
+                              <option value="other">Khac</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1.5">Nhom mau</label>
+                            <select
+                              value={form.bloodType}
+                              onChange={(e) => update('bloodType', e.target.value)}
+                              className="dark-select w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                            >
+                              <option value="">--</option>
+                              <option value="A+">A+</option><option value="A-">A-</option>
+                              <option value="B+">B+</option><option value="B-">B-</option>
+                              <option value="AB+">AB+</option><option value="AB-">AB-</option>
+                              <option value="O+">O+</option><option value="O-">O-</option>
+                              <option value="unknown">Chua biet</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-400 mb-1.5">So dien thoai</label>
+                          <div className="relative">
+                            <FiPhone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm" />
+                            <input
+                              type="tel"
+                              value={form.phone}
+                              onChange={(e) => update('phone', e.target.value)}
+                              className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                              placeholder="0912345678"
+                              pattern="0\d{9}"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-400 mb-1.5">So CCCD</label>
+                          <div className="relative">
+                            <FiCreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm" />
+                            <input
+                              type="text"
+                              value={form.idCard}
+                              onChange={(e) => update('idCard', e.target.value)}
+                              className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                              placeholder="12 chu so"
+                              pattern="\d{12}"
+                              maxLength={12}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-400 mb-1.5">So the BHYT</label>
+                          <input
+                            type="text"
+                            value={form.bhytNumber}
+                            onChange={(e) => update('bhytNumber', e.target.value.toUpperCase())}
+                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                            placeholder="15 ky tu (VD: HS4797520123456)"
+                            maxLength={15}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-400 mb-1.5">Di ung (phan cach bang dau phay)</label>
+                          <input
+                            type="text"
+                            value={form.allergies}
+                            onChange={(e) => update('allergies', e.target.value)}
+                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                            placeholder="penicillin, dau phong, lac"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-400 mb-1.5">Benh man tinh (phan cach bang dau phay)</label>
+                          <input
+                            type="text"
+                            value={form.chronicConditions}
+                            onChange={(e) => update('chronicConditions', e.target.value)}
+                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500/40"
+                            placeholder="tieu duong, tang huyet ap"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <button

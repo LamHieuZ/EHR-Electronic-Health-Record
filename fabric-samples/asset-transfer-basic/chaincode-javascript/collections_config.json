@@ -9,7 +9,7 @@
     "memberOnlyWrite": true
   },
   {
-    "name": "hospital3Collection",
+    "name": "hospital2Collection",
     "policy": "OR('Org3MSP.member')",
     "requiredPeerCount": 0,
     "maxPeerCount": 1,

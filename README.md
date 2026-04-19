@@ -1,6 +1,6 @@
 # Electronic Health Record (EHR) - Blockchain Based Platform
 
-Hệ thống quản lý hồ sơ y tế điện tử phi tập trung trên **Hyperledger Fabric**, cho phép bệnh nhân, bác sĩ, bệnh viện, nhà thuốc và công ty bảo hiểm tương tác với dữ liệu y tế thông qua **role-based access control (RBAC)** và **private data collections (PDC)** trên sổ cái bất biến.
+Hệ thống quản lý hồ sơ y tế điện tử phi tập trung trên **Hyperledger Fabric**, kết hợp **IPFS** cho lưu trữ file y tế có mã hóa, chuẩn **FHIR R4** cho tích hợp, và **CVX/ICD-10/ATC** chuẩn y khoa quốc tế. Hỗ trợ đầy đủ: bệnh nhân, bác sĩ, bệnh viện, nhà thuốc, công ty bảo hiểm — với **role-based access control**, **private data collections** và **consent-based cross-hospital sharing**.
 
 ## Tech Stack
 
@@ -8,8 +8,11 @@ Hệ thống quản lý hồ sơ y tế điện tử phi tập trung trên **Hyp
 |-------|-----------|
 | **Blockchain** | Hyperledger Fabric 2.5, Fabric CA, CouchDB |
 | **Smart Contract** | JavaScript Chaincode (Fabric Contract API 2.5) |
-| **Backend** | Node.js 18+, Express 5, Fabric Network SDK 2.2 |
+| **File Storage** | IPFS (Kubo v0.29) + AES-256-GCM encryption |
+| **Backend** | Node.js 18+, Express 5, Fabric Network SDK 2.2, Multer |
 | **Frontend** | React 18, Vite 5, Tailwind CSS 3.4, React Router 6, Axios |
+| **Interop** | FHIR R4 (Patient, Observation, MedicationRequest, Claim, Practitioner) |
+| **Medical Standards** | ICD-10, ATC, CVX |
 | **Explorer** | Hyperledger Explorer, PostgreSQL |
 | **Infrastructure** | Docker, Docker Compose, WSL2 (Ubuntu 22.04) |
 
@@ -26,52 +29,57 @@ Hệ thống quản lý hồ sơ y tế điện tử phi tập trung trên **Hyp
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                          WSL / Ubuntu                             │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐   │
-│  │             Hyperledger Fabric Network                      │   │
-│  │                                                            │   │
-│  │   Org1 (BV1)       Org2 (Insurance)      Org3 (BV3)        │   │
-│  │   Peer:7051        Peer:9051             Peer:11051        │   │
-│  │   CouchDB:5984     CouchDB:7984          CouchDB:9984      │   │
-│  │                                                            │   │
-│  │                  Channel: mychannel                         │   │
-│  │               Chaincode: ehrChainCode                       │   │
-│  │                                                            │   │
-│  │   ┌─────────────────────────────────────────────────────┐   │   │
-│  │   │ Private Data Collections (trên peer, không replicate)│  │   │
-│  │   │   - hospital1Collection  (chỉ Org1)                  │  │   │
-│  │   │   - hospital3Collection  (chỉ Org3)                  │  │   │
-│  │   │   - sharedClinicalCollection (Org1+Org3)             │  │   │
-│  │   └─────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────┬──────────────────────────────────┘   │
-│                             │ Fabric Network SDK                 │
-│  ┌─────────────────────────▼──────────────────────────────────┐   │
-│  │          Backend: Node.js + Express (port 5000)             │   │
-│  │          JWT auth, FHIR R4 adapter                           │   │
-│  └─────────────────────────┬──────────────────────────────────┘   │
-│                             │ REST /api                            │
-│  ┌─────────────────────────▼──────────────────────────────────┐   │
-│  │           Frontend: React + Vite (port 3000)                │   │
-│  └────────────────────────────────────────────────────────────┘   │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐   │
-│  │        Hyperledger Explorer (port 8080) [optional]          │   │
-│  └────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           WSL / Ubuntu                                    │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                 Hyperledger Fabric Network                           │  │
+│  │                                                                     │  │
+│  │    Org1 (BV1)         Org2 (Insurance)        Org3 (BV2)            │  │
+│  │    Peer:7051          Peer:9051               Peer:11051            │  │
+│  │    CouchDB:5984       CouchDB:7984            CouchDB:9984          │  │
+│  │                                                                     │  │
+│  │                   Channel: mychannel                                │  │
+│  │                Chaincode: ehrChainCode                              │  │
+│  │                                                                     │  │
+│  │    ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │    │ Private Data Collections (trên peer, không replicate ngoài) │  │  │
+│  │    │   - hospital1Collection      (chỉ Org1)                      │  │  │
+│  │    │   - hospital2Collection      (chỉ Org3)                      │  │  │
+│  │    │   - sharedClinicalCollection (Org1 + Org3, khi share)        │  │  │
+│  │    └─────────────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────┬──────────────────────────────────────────┘  │
+│                              │                                            │
+│  ┌──────────────────────────▼──────────────────────────────────────────┐  │
+│  │           Backend: Node.js + Express (port 5000)                    │  │
+│  │           • Fabric Network SDK                                      │  │
+│  │           • IPFS client (fetch API)                                  │  │
+│  │           • AES-256-GCM encryption                                   │  │
+│  │           • FHIR R4 adapter                                          │  │
+│  └──────────┬────────────────────────────────┬──────────────────────────┘  │
+│             │ REST /api                       │ POST /api/v0/add           │
+│  ┌──────────▼───────────────┐  ┌─────────────▼──────────────────┐          │
+│  │   Frontend: React        │  │   IPFS Node (Kubo)              │          │
+│  │   + Vite (port 3000)     │  │   P2P:4001  API:5001            │          │
+│  └──────────────────────────┘  │   Gateway:8088                  │          │
+│                                 │   Stored: ciphertext files       │          │
+│                                 └─────────────────────────────────┘          │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │         Hyperledger Explorer (port 8080) [optional]                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Privacy Model — 2 tầng lưu trữ
+## Privacy & Storage Model — 3 tầng
 
-Dự án dùng kiến trúc **on-chain + PDC** để cách ly dữ liệu y tế nhạy cảm giữa các bệnh viện:
-
-| Tầng | Lưu ở đâu | Chứa gì | Ai thấy |
+| Tầng | Ở đâu | Chứa gì | Ai thấy |
 |---|---|---|---|
-| **On-chain (public ledger)** | Mọi peer trong channel | `patientId`, `doctorId`, `hospitalId`, `privateHash`, timestamps, metadata | Tất cả org trong channel |
-| **PDC (private data)** | CouchDB của org được phép | `diagnosis`, `prescription` | Chỉ org sở hữu collection |
+| **On-chain ledger** | Mọi peer trong channel | Metadata, hash, consent, vaccination, insurance claims | Tất cả org |
+| **PDC (private data)** | CouchDB của org trong policy | `diagnosis`, `prescription`, `chiefComplaint`, AES keys file | Chỉ org owning + org được share |
+| **IPFS (off-chain)** | IPFS node local/cluster | Ciphertext của X-quang, MRI, PDF | Ai cũng tải được, nhưng chỉ org có key trong PDC mới decrypt được |
 
-**Hiệu quả:** Org3 dump CouchDB của mình cũng chỉ thấy hash `a3f7b2…`, không decode được diagnosis gốc của BV1. Hash trên ledger vẫn đảm bảo audit trail bất biến.
+**Hiệu quả:** Dù BV3 dump CouchDB + crawl IPFS, cũng chỉ có được hash + ciphertext. Không có AES key (trong PDC Org1) → không decrypt. Cross-hospital sharing chỉ khả dụng khi bệnh nhân chủ động `shareRecord`.
 
 ## Access Control (ACL)
 
@@ -79,43 +87,61 @@ Chaincode enforce 2 lớp quyền:
 
 **Lớp 1 — Role-based:** mỗi function check `role` của caller (patient/doctor/hospital/pharmacy/insurance/agent).
 
-**Lớp 2 — Relationship-based:** caller phải có quan hệ với resource:
+**Lớp 2 — Relationship-based:**
 - **Patient** → chỉ đọc của chính mình
-- **Doctor** → phải nằm trong `patient.authorizedDoctors` (do bệnh nhân tự cấp qua `grantAccess`)
+- **Doctor** → phải nằm trong `patient.authorizedDoctors` (do bệnh nhân `grantAccess`)
 - **Hospital admin** → chỉ đọc bệnh nhân có ít nhất 1 bác sĩ thuộc BV mình được cấp quyền
 - **Pharmacy** → như hospital admin (để dispense đơn thuốc)
 
-**Flow chuyển viện:** bệnh nhân dùng `grantAccess(doctorIdBV3)` → BV3 (admin + doctor đó) có quyền đọc. Nếu BV3 thuộc collection khác, diagnosis gốc vẫn không tự động chia sẻ — cần flow copy qua `sharedClinicalCollection` (future work).
+**Cross-hospital sharing flow:** bệnh nhân dùng `shareRecord` (hoặc `shareAllRecords`) để copy private data từ `hospitalNCollection` sang `sharedClinicalCollection` → BV khác đọc được. Kèm `unshareRecord` để thu hồi.
 
 ## Project Structure
 
 ```
 EHR-Hyperledger-Fabric-Project/
-├── client/                        # React frontend (port 3000)
+├── client/                               # React frontend (port 3000)
 │   ├── src/
-│   │   ├── pages/                 # Trang theo role
-│   │   ├── components/Layout.jsx  # Sidebar điều hướng theo role
-│   │   ├── context/               # AuthContext (JWT)
-│   │   └── services/api.js        # Axios API layer
-│   └── vite.config.js             # Proxy /api → :5000
+│   │   ├── pages/                        # Trang theo role
+│   │   │   ├── PatientDashboard.jsx
+│   │   │   ├── DoctorDashboard.jsx       # addRecord form có vital signs
+│   │   │   ├── PatientRecords.jsx        # Consent + attachments + share
+│   │   │   ├── Vaccinations.jsx          # Timeline tiêm chủng (CVX)
+│   │   │   ├── Prescriptions.jsx
+│   │   │   ├── AccessControl.jsx
+│   │   │   ├── InsuranceClaims.jsx
+│   │   │   ├── EmergencyLogs.jsx
+│   │   │   ├── AdminLedger.jsx
+│   │   │   ├── Register.jsx              # Form có Tier 1 demographics
+│   │   │   └── Login.jsx
+│   │   ├── components/
+│   │   │   ├── Layout.jsx                # Sidebar nav theo role
+│   │   │   └── AttachmentManager.jsx     # Upload/download IPFS files
+│   │   ├── context/                      # AuthContext (JWT)
+│   │   └── services/api.js               # Axios API layer
+│   └── vite.config.js                    # Proxy /api → :5000
 │
-├── server-node-sdk/               # Express backend (port 5000)
-│   ├── app.js                     # API routes
-│   ├── helper.js                  # Fabric CA registration & wallet
-│   ├── fabric-connection.js       # Gateway connection
-│   ├── invoke.js / query.js       # Chaincode invoke/query
-│   ├── fhir.js                    # FHIR R4 adapter
-│   ├── cert-script/               # Admin & onboarding scripts (Org1/2/3)
-│   └── wallet/                    # Fabric identities
+├── server-node-sdk/                      # Express backend (port 5000)
+│   ├── app.js                            # 50+ API routes
+│   ├── helper.js                         # Fabric CA & wallet
+│   ├── fabric-connection.js              # Gateway
+│   ├── invoke.js / query.js              # Chaincode invoke/query
+│   ├── fhir.js                           # FHIR R4 adapter
+│   ├── ipfs-helper.js                    # IPFS + AES-256-GCM encryption
+│   ├── cert-script/                      # Admin & onboarding (Org1/2/3)
+│   └── wallet/                           # Fabric identities
 │
 ├── fabric-samples/
-│   ├── test-network/              # Fabric network (Org1 + Org2 + Org3)
+│   ├── test-network/                     # Fabric network
 │   └── asset-transfer-basic/chaincode-javascript/
-│       ├── collections_config.json # PDC policy (BV1, BV3, shared)
-│       └── lib/ehrChainCode.js    # Smart contract
+│       ├── collections_config.json       # PDC policy
+│       └── lib/ehrChainCode.js           # Smart contract (~2000 dòng)
 │
-├── fabric-explorer/               # Blockchain explorer (port 8080)
-└── install-fabric.sh              # Tải binaries Fabric
+├── ipfs/                                 # IPFS node cho file storage
+│   ├── docker-compose.yml
+│   └── README.md
+│
+├── fabric-explorer/                      # Blockchain explorer (port 8080)
+└── install-fabric.sh                     # Tải Fabric binaries
 ```
 
 ## Prerequisites
@@ -123,7 +149,7 @@ EHR-Hyperledger-Fabric-Project/
 Cài trong **WSL (Ubuntu 22.04)**:
 
 ```bash
-# Docker & docker compose: cài qua Docker Desktop (Windows) hoặc apt
+# Docker & docker-compose (qua Docker Desktop hoặc apt)
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
@@ -136,16 +162,14 @@ sudo apt-get install -y nodejs
 ./install-fabric.sh
 ```
 
-### 2. Khởi động mạng
+### 2. Khởi động Fabric Network
 
 ```bash
 cd fabric-samples/test-network
 ./network.sh up createChannel -ca -s couchdb
 ```
 
-### 3. (Optional) Thêm Org3 — Bệnh viện thứ 2
-
-Chạy **trước** bước deploy chaincode để `deployCC.sh` tự detect và cài lên cả 3 peer:
+### 3. (Optional) Thêm Org3 trước khi deploy chaincode
 
 ```bash
 cd addOrg3
@@ -164,21 +188,31 @@ cd ..
   -ccep "OR('Org1MSP.peer','Org3MSP.peer')"
 ```
 
-Giải thích:
-- `-cccg`: load `collections_config.json` cho PDC
-- `-ccep`: endorsement policy — chỉ BV điều trị endorse, không bắt 3 bên duyệt
-- Script `deployCC.sh` đã được sửa để tự phát hiện Org3 và cài chaincode lên cả 3 peer nếu có
+**Tham số:**
+- `-cccg`: collections config cho PDC
+- `-ccep`: endorsement policy — mỗi BV tự endorse, không cần 3 bên duyệt
+- `deployCC.sh` đã được sửa để auto-detect Org3
 
-Khi chaincode đổi hoặc sequence cũ, bump cả `-ccv` và `-ccs`:
+Khi chaincode đổi, bump version/sequence:
 ```bash
 ./network.sh deployCC ... -ccv 2.0 -ccs 2 ...
 ```
 
-### 5. Register Admins & Onboard
+### 5. Khởi động IPFS Node
 
 ```bash
-cd /home/lamhieu/EHR-Hyperledger-Fabric-Project/server-node-sdk/
-npm install
+cd ipfs
+docker compose up -d
+
+# Verify
+curl -X POST http://localhost:5001/api/v0/version
+```
+
+### 6. Register Admins & Onboard
+
+```bash
+cd server-node-sdk
+npm install    # kèm multer cho file upload
 
 # Org1 + Org2
 node cert-script/registerHospitalAdmin.js
@@ -189,18 +223,22 @@ node cert-script/onboardInsuranceCompany.js
 node cert-script/onboardInsuranceAgent.js
 
 # Org3 (nếu có)
-node cert-script/registerHospital3Admin.js
-node cert-script/onboardOrg3Doctor.js
+node cert-script/registerHospital2Admin.js
+node cert-script/onboardDoctorHos2.js
+node cert-script/onboardPharmacyHos2.js
 ```
 
-### 6. Start Backend
+### 7. Start Backend
 
 ```bash
 cd server-node-sdk
 npm run dev    # http://localhost:5000
+
+# Health check IPFS
+curl http://localhost:5000/ipfsStatus
 ```
 
-### 7. Start Frontend
+### 8. Start Frontend
 
 ```bash
 cd client
@@ -208,7 +246,7 @@ npm install
 npm run dev    # http://localhost:3000
 ```
 
-### 8. (Optional) Start Explorer
+### 9. (Optional) Start Explorer
 
 ```bash
 cd fabric-explorer
@@ -222,8 +260,9 @@ docker-compose up -d    # http://localhost:8080
 ## Shutdown
 
 ```bash
-cd fabric-explorer && docker-compose down
-cd fabric-samples/test-network && ./network.sh down
+cd ipfs && docker compose down
+cd ../fabric-explorer && docker-compose down
+cd ../fabric-samples/test-network && ./network.sh down
 ```
 
 ---
@@ -232,27 +271,52 @@ cd fabric-samples/test-network && ./network.sh down
 
 | Role | Redirect | Trang chính |
 |------|----------|-------------|
-| `patient` | `/dashboard` | Tổng quan, Hồ sơ bệnh án, Quyền truy cập, Đơn thuốc, Bảo hiểm, Nhật ký khẩn cấp |
-| `doctor` | `/doctor` | Bảng điều khiển, Hồ sơ bệnh án, Đơn thuốc, Truy cập khẩn cấp |
-| `hospital` | `/admin/ledger` | Bệnh viện & Bác sĩ, Sổ cái Blockchain |
+| `patient` | `/dashboard` | Tổng quan, Hồ sơ bệnh án, Tiêm chủng, Quyền truy cập, Đơn thuốc, Bảo hiểm, Nhật ký khẩn cấp |
+| `doctor` | `/doctor` | Bảng điều khiển, Hồ sơ bệnh án, Tiêm chủng, Đơn thuốc, Truy cập khẩn cấp |
+| `hospital` | `/admin/ledger` | Bác sĩ, Nhà thuốc, Sổ cái Blockchain |
 | `pharmacy` | `/prescriptions` | Đơn thuốc (dispense) |
-| `insurance` | `/insurance` | Chi nhánh, Sổ cái Org2 |
-| `agent` | `/insurance` | Duyệt/từ chối yêu cầu bảo hiểm |
+| `insurance` | `/insurance/agents` | Chi nhánh, Sổ cái Org2 |
+| `agent` | `/insurance/pending` | Duyệt/từ chối claim |
 
 ---
 
 ## Features
 
-### Quản lý hồ sơ bệnh án
-- Bác sĩ tạo hồ sơ theo chuẩn **ICD-10** (chẩn đoán) + **ATC** (thuốc)
-- Diagnosis + prescription lưu trong PDC → không leak sang BV khác
-- Metadata + hash lưu on-chain để audit trail bất biến
-- Xem lịch sử version qua `queryHistoryOfAsset`
+### Patient Demographics (Tier 1)
+Bệnh nhân đăng ký với bộ thông tin y tế đầy đủ:
+- Giới tính, nhóm máu (A/B/AB/O ± Rh)
+- SĐT, CCCD (12 số), BHYT (15 ký tự)
+- Dị ứng, bệnh mãn tính (danh sách)
+- Liên hệ khẩn cấp, địa chỉ chi tiết
 
-### Consent-based access
-- Bệnh nhân tự cấp/thu hồi quyền cho từng bác sĩ (`grantAccess` / `revokeAccess`)
-- Không ai (kể cả admin) cấp hộ được
-- Bác sĩ chỉ đọc được bệnh nhân trong danh sách `authorizedDoctors`
+### Hồ sơ bệnh án
+- ICD-10 cho chẩn đoán, ATC cho thuốc — validate theo regex chuẩn
+- **Vital signs** (public): nhiệt độ, huyết áp, mạch, SpO2, cân, cao
+- **Visit type**: ngoại trú / nội trú / cấp cứu / tái khám / tư vấn
+- **Chief complaint** (private PDC): lý do đến khám
+- Diagnosis + prescription lưu PDC; chỉ BV điều trị + BV được share xem được
+- Lịch sử version on-chain via `queryHistoryOfAsset`
+
+### Consent-based Access & Sharing
+- `grantAccess` / `revokeAccess` — bệnh nhân quyết quyền đọc
+- `shareRecord` / `unshareRecord` — chia sẻ 1 hồ sơ qua PDC
+- `shareAllRecords` / `unshareAllRecords` — bulk chia sẻ toàn bộ history khi chuyển viện
+- Không ai (kể cả admin) cấp/share hộ được
+
+### Vaccination History (CVX code)
+- 15 vaccine phổ biến quick-pick (COVID Pfizer/Moderna/AZ, HepB, MMR, DTaP, HPV...)
+- Timeline view với dot markers màu (xanh ok / vàng quá hạn / đỏ có phản ứng)
+- Ghi đầy đủ: hãng SX, số lô, vị trí tiêm, liều số, ngày hẹn mũi tiếp
+- Báo cáo phản ứng phụ 4 mức (Nhẹ/Vừa/Nặng/Nguy hiểm)
+- Public ledger — cross-hospital visible (phục vụ public health)
+
+### File y tế (IPFS + encryption)
+- Upload X-quang, MRI, CT, siêu âm, ECG, lab report, discharge summary
+- File encrypt AES-256-GCM trước khi upload IPFS
+- Ciphertext lên IPFS (CID tự sinh từ hash); AES key lưu PDC
+- On-chain: CID + sha256(plaintext) để audit integrity
+- Download auto decrypt + verify hash — detect tampering
+- Max 100MB/file, 9 loại file được phân loại
 
 ### Đơn thuốc
 - Bác sĩ tạo prescription trong `addRecord`
@@ -263,46 +327,63 @@ cd fabric-samples/test-network && ./network.sh down
 - Agent duyệt/từ chối; insurance admin xem sổ cái Org2
 
 ### Truy cập khẩn cấp
-- Bác sĩ/admin có thể `emergencyAccess` khi bệnh nhân không thể cấp quyền (lý do ≥ 10 ký tự)
-- Mọi lần truy cập đều ghi log bất biến
-- Bệnh nhân xem được log ai đã access hồ sơ mình
+- Bác sĩ/admin có thể `emergencyAccess` khi bệnh nhân không thể cấp quyền
+- Mọi truy cập ghi log bất biến; bệnh nhân xem được ai đã access
 
 ### Sổ cái Blockchain
-- **`fetchLedger`** (hospital admin Org1/Org3): metadata + hash records
-- **`fetchOrg2Ledger`** (insurance admin): insurance company, agent, claims
+- `fetchLedger` — metadata + hash (không có diagnosis/prescription plain)
+- `fetchOrg2Ledger` — insurance, agent, claims
 
 ---
 
 ## API Endpoints
 
-Base URL: `http://localhost:5000` — tất cả **POST** với JSON body.
+Base URL: `http://localhost:5000` — phần lớn **POST**, JSON body; upload là multipart/form-data.
 
 ### Authentication
 | Endpoint | Mô tả |
 |----------|-------|
-| `/registerPatient` | Đăng ký bệnh nhân |
+| `/registerPatient` | Đăng ký bệnh nhân (Tier 1 demographics tùy chọn) |
 | `/loginPatient` | Đăng nhập |
+| `/updateProfile` | Cập nhật profile (patient/doctor) |
+| `/changePassword` | Đổi mật khẩu |
 
 ### Medical Records
 | Endpoint | Mô tả |
 |----------|-------|
-| `/addRecord` | Tạo hồ sơ (public metadata + PDC private) |
+| `/addRecord` | Tạo hồ sơ (vital signs public + diagnosis/prescription PDC) |
 | `/updateRecord` | Cập nhật (chỉ BV sở hữu) |
 | `/getRecordById` | Lấy 1 hồ sơ (merge public + private) |
 | `/getAllRecordsByPatientId` | Tất cả hồ sơ của bệnh nhân |
 | `/queryHistoryOfAsset` | Lịch sử blockchain của 1 key |
 
-### Access Control
+### Access Control & Sharing
 | Endpoint | Mô tả |
 |----------|-------|
-| `/grantAccess` | Bệnh nhân cấp quyền cho bác sĩ |
-| `/revokeAccess` | Bệnh nhân thu hồi quyền |
+| `/grantAccess` / `/revokeAccess` | Cấp / thu hồi quyền bác sĩ |
+| `/shareRecord` / `/unshareRecord` | Chia sẻ 1 record qua sharedClinicalCollection |
+| `/shareAllRecords` / `/unshareAllRecords` | Bulk chia sẻ toàn bộ history |
 | `/getPatientById` | Xem thông tin bệnh nhân |
+
+### Vaccinations
+| Endpoint | Mô tả |
+|----------|-------|
+| `/addVaccination` | Thêm mũi tiêm (CVX code) |
+| `/getVaccinationsByPatient` | Timeline tiêm chủng |
+| `/reportAdverseReaction` | Báo cáo phản ứng phụ |
+
+### IPFS Attachments
+| Endpoint | Mô tả |
+|----------|-------|
+| `/uploadAttachment` | Upload file (multipart, auto encrypt + IPFS + chain) |
+| `/downloadAttachment` | Download (decrypt + verify hash) |
+| `/getAttachmentsByPatient` | List attachments |
+| `GET /ipfsStatus` | Health check IPFS node |
 
 ### Prescriptions
 | Endpoint | Mô tả |
 |----------|-------|
-| `/getPrescriptionsByPatient` | Đơn thuốc của 1 bệnh nhân |
+| `/getPrescriptionsByPatient` | Đơn thuốc của bệnh nhân |
 | `/verifyPrescription` | Nhà thuốc xác nhận dispense |
 
 ### Insurance Claims
@@ -322,25 +403,28 @@ Base URL: `http://localhost:5000` — tất cả **POST** với JSON body.
 |----------|-------|
 | `/onboardHospital`, `/onboardDoctor`, `/onboardPharmacy` | Thêm thực thể |
 | `/onboardInsuranceCompany`, `/onboardInsuranceAgent` | Thêm BH |
-| `/getAllHospitals`, `/getAllDoctors`, `/getAllPharmacies`, `/getAllInsuranceCompanies`, `/getAllAgents` | List |
+| `/getAllHospitals`, `/getAllDoctors`, `/getAllPharmacies` | List |
+| `/getAllInsuranceCompanies`, `/getAllAgents` | List BH |
 
 ### Ledger
 | Endpoint | Mô tả |
 |----------|-------|
-| `/fetchLedger` | Sổ cái hospital (Org1/Org3) |
-| `/fetchOrg2Ledger` | Sổ cái insurance (Org2) |
+| `/fetchLedger` | Sổ cái hospital (metadata + hash) |
+| `/fetchOrg2Ledger` | Sổ cái insurance |
 
 ---
 
 ## Chaincode Functions
 
-Smart contract [`ehrChainCode.js`](fabric-samples/asset-transfer-basic/chaincode-javascript/lib/ehrChainCode.js) gồm các nhóm:
+Smart contract [`ehrChainCode.js`](fabric-samples/asset-transfer-basic/chaincode-javascript/lib/ehrChainCode.js):
 
 | Nhóm | Function |
 |------|----------|
 | **Patient** | `registerPatient`, `getPatientById`, `getAllPatients` |
 | **Records** | `addRecord`, `updateRecord`, `getRecordById`, `getAllRecordsByPatientId`, `getRecordsByDoctor`, `queryHistoryOfAsset` |
-| **Access** | `grantAccess`, `revokeAccess` |
+| **Access & Share** | `grantAccess`, `revokeAccess`, `shareRecordWithHospital`, `unshareRecordFromHospital`, `shareAllRecordsWithHospital`, `unshareAllRecordsFromHospital` |
+| **Vaccination** | `addVaccination`, `getVaccinationsByPatient`, `reportAdverseReaction` |
+| **IPFS Attachment** | `addAttachment`, `getAttachmentDecryptionKey`, `getAttachmentsByPatient` |
 | **Prescription** | `getPrescriptionsByPatient`, `verifyPrescription` |
 | **Insurance** | `createClaim`, `getClaim`, `getClaimsByPatient`, `getAllClaims`, `approveClaim`, `rejectClaim` |
 | **Emergency** | `emergencyAccess`, `getEmergencyLogs` |
@@ -351,12 +435,15 @@ Smart contract [`ehrChainCode.js`](fabric-samples/asset-transfer-basic/chaincode
 
 | Key Format | Loại dữ liệu | Tầng |
 |------------|-------------|------|
-| `patient-{id}` | Bệnh nhân | on-chain |
+| `patient-{id}` | Bệnh nhân (Tier 1 đầy đủ) | on-chain |
 | `hospital-{id}`, `doctor-{id}`, `pharmacy-{id}` | Metadata | on-chain |
 | `insurance-{id}`, `agent-{id}` | BH | on-chain |
-| `record\|{patientId}\|{recordId}` | Metadata + hash | on-chain |
-| `record\|{patientId}\|{recordId}` (trong PDC) | diagnosis, prescription | **private (PDC)** |
-| `claim\|{patientId}\|{claimId}` | Claim | on-chain |
+| `record\|{patientId}\|{recordId}` | Metadata + vital signs + hash | on-chain |
+| `record\|{patientId}\|{recordId}` (PDC) | diagnosis, prescription, chiefComplaint | **private (PDC)** |
+| `vaccination\|{patientId}\|{vaxId}` | Mũi tiêm + CVX code | on-chain |
+| `attachment\|{patientId}\|{recordId}\|{attId}` | CID + hash + metadata file | on-chain |
+| `attachment\|...` (PDC) | AES key, IV, authTag | **private (PDC)** |
+| `claim\|{patientId}\|{claimId}` | Claim BH | on-chain |
 | `dispense\|{patientId}\|{dispenseId}` | Dispense log | on-chain |
 | `emergency\|{patientId}\|{logId}` | Log khẩn cấp | on-chain |
 
@@ -366,15 +453,19 @@ Composite keys truy vấn bằng `getStateByPartialCompositeKey`.
 
 ## Data Validation
 
-- **ICD-10** (format: A00–Z99.9) cho chẩn đoán
-- **ATC** codes cho thuốc, kèm validate liều/đường dùng
+- **ICD-10** (format: `A00-Z99.9`) — chẩn đoán
+- **ATC** (format: `1 chữ + 2 số + 2 chữ + 2 số`) — thuốc; validate liều, đường dùng
+- **CVX** (1-3 chữ số, chuẩn CDC) — vaccine
+- **CID** (CIDv0 `Qm...` hoặc CIDv1 `bafy.../bafk...`) — IPFS file
+- **CCCD** 12 số VN, **BHYT** 15 ký tự chữ+số, **SĐT** 0xxxxxxxxx
+- **Vital signs** range: nhiệt độ 30-45°C, SpO2 50-100%, huyết áp format `xxx/xx`
 - Lý do truy cập khẩn cấp ≥ 10 ký tự
 
 ---
 
 ## FHIR R4 API
 
-Adapter tại `http://localhost:5000/fhir` dịch dữ liệu EHR sang chuẩn **FHIR R4** để tích hợp HIS/ứng dụng di động.
+Adapter tại `http://localhost:5000/fhir` dịch dữ liệu EHR sang chuẩn **FHIR R4**.
 
 | Method | Endpoint | FHIR Resource |
 |--------|----------|---------------|
@@ -385,18 +476,6 @@ Adapter tại `http://localhost:5000/fhir` dịch dữ liệu EHR sang chuẩn *
 | GET | `/fhir/MedicationRequest/:patientId/:recordId` | MedicationRequest (ATC) |
 | GET | `/fhir/Claim/:patientId/:claimId` | Claim |
 | GET | `/fhir/Practitioner/:doctorId` | Practitioner |
-
-Ví dụ Patient:
-```json
-{
-  "resourceType": "Patient",
-  "id": "patient01",
-  "identifier": [{ "system": "urn:ehr:blockchain", "value": "patient01" }],
-  "name": [{ "use": "official", "family": "Nguyễn", "given": ["Văn A"] }],
-  "gender": "male",
-  "birthDate": "1990-05-15"
-}
-```
 
 Ví dụ Observation (ICD-10):
 ```json
@@ -426,18 +505,48 @@ Ví dụ MedicationRequest (ATC):
 
 ---
 
+## IPFS File Storage
+
+### Flow upload
+```
+Frontend → multipart/form-data → Backend
+  → encrypt AES-256-GCM (random key + IV)
+  → POST /api/v0/add?pin=true → IPFS → CID
+  → chaincode addAttachment:
+     public ledger: { cid, sha256(plaintext), fileName, fileType, size }
+     PDC hospital{N}Collection: { aesKeyHex, ivHex, authTagHex }
+```
+
+### Flow download
+```
+Frontend → /downloadAttachment → Backend
+  → chaincode getAttachmentDecryptionKey (ACL + PDC)
+  → POST /api/v0/cat?arg=<cid> → IPFS → ciphertext
+  → AES-256-GCM decrypt
+  → verify sha256(plaintext) khớp on-chain hash
+  → stream plaintext về client
+```
+
+### Test cách ly
+```bash
+# Upload X-quang bằng BV1 doctor → lấy CID
+# Thử tải raw từ IPFS gateway
+curl http://localhost:8088/ipfs/<CID> --output leaked.bin
+
+# Mở file → chỉ thấy binary garbage (ciphertext)
+# Không có AES key trong PDC Org3 → không decrypt được
+```
+
+---
+
 ## Troubleshooting
 
-**Backend không kết nối được Fabric**
+**Backend không kết nối Fabric**
 - `docker ps` kiểm tra peer/orderer còn chạy
 - Sau `./network.sh down && up`, phải chạy lại scripts đăng ký admin
 
-**Lỗi wallet/ khi start backend**
+**Wallet lỗi khi start backend**
 - Xóa `server-node-sdk/wallet/` rồi chạy lại cert scripts
-
-**Frontend redirect loop**
-- Xóa localStorage, đăng nhập lại
-- Kiểm tra role trong `getHomeRedirect` (App.jsx)
 
 **Port conflict**
 ```bash
@@ -453,10 +562,25 @@ kill $(lsof -ti:5000)
 - Hoặc record tạo trước khi deploy PDC — reset network hoặc migrate
 
 **BV3 không thấy diagnosis của BV1**
-- **Đúng thiết kế** — PDC cách ly. Nếu muốn share: bệnh nhân grant thêm bác sĩ BV3, sau đó copy sang `sharedClinicalCollection` (flow chưa implement).
+- **Đúng thiết kế** — PDC cách ly. Bệnh nhân cần `shareRecord` hoặc `shareAllRecords` trước.
 
-**Sổ cái không hiện records**
-- Record đã chuyển sang PDC, `fetchLedger` chỉ trả metadata + hash. Để xem full dùng `getAllRecordsByPatientId`.
+**IPFS upload/download fail**
+- `curl http://localhost:5000/ipfsStatus` để check node
+- `docker logs ehr-ipfs` xem log
+- Nếu lỗi CORS: xem `ipfs/README.md` hướng dẫn bật CORS cho frontend
+
+**`Access denied: no decryption key available`**
+- Caller không có quyền đọc PDC (sai org)
+- Hoặc file chưa share với collection mà caller truy cập được
+- Cần `shareRecord` để copy key sang `sharedClinicalCollection`
+
+**Tải xong nhưng file garbage**
+- Hash mismatch → file đã bị tamper trên IPFS (hiếm) hoặc decrypt lỗi key
+- Kiểm tra log backend: `Integrity check failed`
+
+**Vite redirect loop / không vào được page**
+- Xóa localStorage, đăng nhập lại
+- Kiểm tra role trong `getHomeRedirect` (App.jsx)
 
 ## License
 

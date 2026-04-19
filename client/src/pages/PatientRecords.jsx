@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getAllRecordsByPatientId, queryHistoryOfAsset, shareRecord, unshareRecord, shareAllRecords, unshareAllRecords } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiFileText, FiSearch, FiClock, FiChevronDown, FiChevronUp, FiUser, FiActivity, FiPackage, FiShare2, FiLock, FiEyeOff } from 'react-icons/fi'
+import { FiFileText, FiSearch, FiClock, FiChevronDown, FiChevronUp, FiUser, FiActivity, FiPackage, FiShare2, FiLock, FiEyeOff, FiPaperclip } from 'react-icons/fi'
+import AttachmentManager from '../components/AttachmentManager'
 
 const routeLabel = { oral: 'Uống', iv: 'Tiêm TM', im: 'Tiêm bắp', sc: 'Tiêm dưới da', topical: 'Bôi ngoài', inhaled: 'Hít', rectal: 'Trực tràng', sublingual: 'Ngậm lưỡi' }
 const timingLabel = { before_meal: 'Trước ăn', after_meal: 'Sau ăn', with_meal: 'Trong khi ăn', empty_stomach: 'Lúc đói', bedtime: 'Trước ngủ', morning: 'Buổi sáng', as_needed: 'Khi cần' }
@@ -29,6 +30,44 @@ function DiagnosisCard({ diagnosis }) {
         </div>
       )}
       {d.notes && <p className="text-xs text-gray-500 italic">Ghi chú: {d.notes}</p>}
+    </div>
+  )
+}
+
+function VitalSignsBadge({ vitalSigns, visitType }) {
+  if (!vitalSigns && !visitType) return null
+  const visitLabel = {
+    outpatient: 'Ngoại trú', inpatient: 'Nội trú', emergency: 'Cấp cứu',
+    followup: 'Tái khám', consultation: 'Tư vấn'
+  }
+  const cls = {
+    orange: 'bg-orange-50 text-orange-700 border-orange-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
+    pink: 'bg-pink-50 text-pink-700 border-pink-200',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    green: 'bg-green-50 text-green-700 border-green-200',
+  }
+  const items = []
+  if (vitalSigns?.temperature) items.push({ label: 'T°', value: `${vitalSigns.temperature}°C`, color: 'orange' })
+  if (vitalSigns?.bloodPressure) items.push({ label: 'HA', value: vitalSigns.bloodPressure, color: 'red' })
+  if (vitalSigns?.pulse) items.push({ label: 'Mạch', value: `${vitalSigns.pulse}`, color: 'pink' })
+  if (vitalSigns?.spO2) items.push({ label: 'SpO₂', value: `${vitalSigns.spO2}%`, color: 'blue' })
+  if (vitalSigns?.weight) items.push({ label: 'Cân', value: `${vitalSigns.weight}kg`, color: 'green' })
+  if (vitalSigns?.height) items.push({ label: 'Cao', value: `${vitalSigns.height}cm`, color: 'green' })
+
+  if (items.length === 0 && !visitType) return null
+  return (
+    <div className="flex items-center gap-2 flex-wrap mb-3 text-xs">
+      {visitType && (
+        <span className="px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded font-medium">
+          {visitLabel[visitType] || visitType}
+        </span>
+      )}
+      {items.map((it, i) => (
+        <span key={i} className={`px-2 py-1 border rounded ${cls[it.color]}`}>
+          <b>{it.label}</b> {it.value}
+        </span>
+      ))}
     </div>
   )
 }
@@ -310,6 +349,9 @@ export default function PatientRecords() {
                   </div>
                 </div>
 
+                {/* Vital signs + visit type badges */}
+                <VitalSignsBadge vitalSigns={val.vitalSigns} visitType={val.visitType} />
+
                 {/* Body */}
                 {canSeePrivate ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -340,6 +382,19 @@ export default function PatientRecords() {
                     </div>
                   </div>
                 )}
+
+                {/* Attachments (IPFS) */}
+                <div className="mt-4 border-t border-gray-100 pt-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                    <FiPaperclip /> File đính kèm
+                  </p>
+                  <AttachmentManager
+                    patientId={patientId}
+                    recordId={recordId}
+                    canUpload={user.role === 'doctor' || (user.role === 'patient' && user.userId === patientId)}
+                    compact
+                  />
+                </div>
 
                 {/* Actions */}
                 <div className="mt-4 flex items-center justify-between flex-wrap gap-2">

@@ -204,7 +204,7 @@ const getRoleFromCert = (certPem) => {
 const deriveRoleFromUserId = (userId) => {
     const map = {
         hospitalAdmin: 'hospital',
-        hospital3Admin: 'hospital',
+        hospital2Admin: 'hospital',
         insuranceAdmin: 'insurance',
     };
     return map[userId] || null;

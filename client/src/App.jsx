@@ -11,6 +11,8 @@ import Prescriptions from './pages/Prescriptions'
 import InsuranceClaims from './pages/InsuranceClaims'
 import EmergencyLogs from './pages/EmergencyLogs'
 import AdminLedger from './pages/AdminLedger'
+import Vaccinations from './pages/Vaccinations'
+import Procedures from './pages/Procedures'
 
 function ProtectedRoute({ children, roles }) {
   const { user } = useAuth()
@@ -48,6 +50,8 @@ export default function App() {
         <Route path="/insurance" element={<InsuranceClaims />} />
         <Route path="/insurance/:tab" element={<InsuranceClaims />} />
         <Route path="/emergency" element={<EmergencyLogs />} />
+        <Route path="/vaccinations" element={<Vaccinations />} />
+        <Route path="/procedures" element={<Procedures />} />
         <Route path="/admin/doctors" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
         <Route path="/admin/pharmacies" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />
         <Route path="/admin/ledger" element={<ProtectedRoute roles={['admin', 'hospital']}><AdminLedger /></ProtectedRoute>} />

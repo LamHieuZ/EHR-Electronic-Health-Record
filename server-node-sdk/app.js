@@ -7,11 +7,19 @@ const invoke = require('./invoke');
 const query = require('./query');
 const cors = require('cors');
 const fhirRouter = require('./fhir');
+const multer = require('multer');
+const ipfsHelper = require('./ipfs-helper');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 app.use(fhirRouter);
+
+// Multer in-memory storage cho upload, limit 100MB (matched voi chaincode)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 }
+});
 
 const server = http.createServer(app);
 server.listen(5000, function () {
@@ -49,7 +57,12 @@ app.get('/status', async function (req, res, next) {
 
 app.post('/registerPatient', async function (req, res, next) {
     try {
-        let {adminId, userId, name, dob, city, password, orgId} = req.body;
+        let {
+            adminId, userId, name, dob, city, password, orgId,
+            // Tier 1 demographics (tat ca optional)
+            gender, idCard, phone, email, bhytNumber, bloodType,
+            allergies, chronicConditions, emergencyContact, address
+        } = req.body;
 
         console.log("Received request:", req.body);
         if (!userId) {
@@ -58,12 +71,14 @@ app.post('/registerPatient', async function (req, res, next) {
         if (!password || password.length < 4) {
             throw new Error("Password is required (min 4 characters).");
         }
-        adminId = adminId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
-        const submitterId = req.body.submitterId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
+        adminId = adminId || (orgId === 'Org3' ? 'hospital2Admin' : 'hospitalAdmin');
+        const submitterId = req.body.submitterId || (orgId === 'Org3' ? 'hospital2Admin' : 'hospitalAdmin');
 
         const result = await helper.registerUser(adminId, submitterId, userId, 'patient', {
             chaincodeFcn: 'onboardPatient',
-            patientId: userId, name, dob, city
+            patientId: userId, name, dob, city,
+            gender, idCard, phone, email, bhytNumber, bloodType,
+            allergies, chronicConditions, emergencyContact, address
         }, {}, orgId || null);
 
         // Luu hash password
@@ -89,7 +104,7 @@ app.post('/onboardHospital', async function (req, res, next) {
         if (!password || password.length < 4) {
             throw new Error("Password is required (min 4 characters).");
         }
-        const admin = adminId || (orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin');
+        const admin = adminId || (orgId === 'Org3' ? 'hospital2Admin' : 'hospitalAdmin');
         const result = await helper.registerUser(
             admin, admin, hospitalId, 'hospital',
             { chaincodeFcn: 'onboardHospital', hospitalId, name, city },
@@ -115,7 +130,7 @@ app.post('/onboardDoctor', async function (req, res, next) {
         if (!password || password.length < 4) {
             throw new Error("Password is required (min 4 characters).");
         }
-        const admin = orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin';
+        const admin = orgId === 'Org3' ? 'hospital2Admin' : 'hospitalAdmin';
         const result = await helper.registerUser(
             admin, admin, doctorId, 'doctor',
             { chaincodeFcn: 'onboardDoctor', doctorId, name, city, dob, department, position, specialization, phone },
@@ -141,7 +156,7 @@ app.post('/onboardPharmacy', async function (req, res, next) {
         if (!password || password.length < 4) {
             throw new Error("Password is required (min 4 characters).");
         }
-        const admin = orgId === 'Org3' ? 'hospital3Admin' : 'hospitalAdmin';
+        const admin = orgId === 'Org3' ? 'hospital2Admin' : 'hospitalAdmin';
         const result = await helper.registerUser(
             admin, admin, pharmacyId, 'pharmacy',
             { chaincodeFcn: 'onboardPharmacy', pharmacyId, name, city },
@@ -283,9 +298,18 @@ app.post('/loginPatient', async function (req, res, next){
 // ===========================================================================================
 app.post('/updateProfile', async function (req, res, next) {
     try {
-        const { userId, name, dob, city, department, position, specialization, phone } = req.body;
+        const {
+            userId, name, dob, city, department, position, specialization, phone,
+            // Tier 1 patient demographics
+            gender, idCard, email, bhytNumber, bloodType,
+            allergies, chronicConditions, emergencyContact, address
+        } = req.body;
         if (!userId) throw new Error('Missing userId');
-        const result = await invoke.invokeTransaction('updateProfile', { name, dob, city, department, position, specialization, phone }, userId);
+        const result = await invoke.invokeTransaction('updateProfile', {
+            name, dob, city, department, position, specialization, phone,
+            gender, idCard, email, bhytNumber, bloodType,
+            allergies, chronicConditions, emergencyContact, address
+        }, userId);
         res.status(200).send({ success: true, data: result });
     } catch (error) {
         next(error);
@@ -337,14 +361,22 @@ app.post('/queryHistoryOfAsset', async function (req, res, next){
 app.post('/addRecord', async function (req, res, next){
     try {
         //  Only doctors can add records
-        const {userId, patientId, diagnosis, prescription} = req.body;
+        const {userId, patientId, diagnosis, prescription, vitalSigns, visitType, chiefComplaint} = req.body;
         const diagObj = typeof diagnosis === 'string' ? JSON.parse(diagnosis) : diagnosis;
         const presObj = typeof prescription === 'string' ? JSON.parse(prescription) : prescription;
-        const result = await invoke.invokeTransaction('addRecord', {patientId, diagnosis: diagObj, prescription: presObj}, userId);
-              
+        const vsObj = typeof vitalSigns === 'string' ? JSON.parse(vitalSigns) : vitalSigns;
+        const result = await invoke.invokeTransaction('addRecord', {
+            patientId,
+            diagnosis: diagObj,
+            prescription: presObj,
+            vitalSigns: vsObj,
+            visitType,
+            chiefComplaint
+        }, userId);
+
         res.send({success:true, data: result})
-                
-    } catch (error) {       
+
+    } catch (error) {
         next(error);
     }
 });
@@ -353,13 +385,122 @@ app.post('/addRecord', async function (req, res, next){
 app.post('/getAllRecordsByPatientId', async function (req, res, next){
     try {
         // getAllRecordsByPatientId(ctx, patientId
-        const {userId, patientId} = req.body;  
+        const {userId, patientId} = req.body;
         const result = await query.getQuery('getAllRecordsByPatientId',{patientId}, userId);
 
         console.log("Response from chaincode", result);
         res.status(200).send({ success: true, data:result});
 
-    } catch (error) {       
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// PROCEDURE HISTORY - Phau thuat & thu thuat (ICD-10-PCS)
+// ===========================================================================================
+app.post('/addProcedure', async function (req, res, next){
+    try {
+        const {
+            userId, patientId, procedureCode, procedureName, category,
+            performedDate, duration, assistants, department,
+            anesthesiaType, relatedRecordId, followUpPlan, notes
+        } = req.body;
+        if (!patientId || !procedureCode || !procedureName || !category) {
+            throw new Error('Missing patientId, procedureCode, procedureName or category');
+        }
+        const result = await invoke.invokeTransaction('addProcedure', {
+            patientId, procedureCode, procedureName, category,
+            performedDate, duration, assistants, department,
+            anesthesiaType, relatedRecordId, followUpPlan, notes
+        }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/updateProcedureOutcome', async function (req, res, next){
+    try {
+        const { userId, patientId, procId, outcome, complications, followUpPlan, notes } = req.body;
+        if (!patientId || !procId || !outcome) {
+            throw new Error('Missing patientId, procId or outcome');
+        }
+        const result = await invoke.invokeTransaction('updateProcedureOutcome', {
+            patientId, procId, outcome, complications, followUpPlan, notes
+        }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/getProceduresByPatient', async function (req, res, next){
+    try {
+        const { userId, patientId } = req.body;
+        if (!patientId) throw new Error('Missing patientId');
+        const result = await query.getQuery('getProceduresByPatient', { patientId }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/getProceduresByRecord', async function (req, res, next){
+    try {
+        const { userId, patientId, recordId } = req.body;
+        if (!patientId || !recordId) throw new Error('Missing patientId or recordId');
+        const result = await query.getQuery('getProceduresByRecord', { patientId, recordId }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ===========================================================================================
+// VACCINATION HISTORY - Lich su tiem chung (CVX code)
+// ===========================================================================================
+app.post('/addVaccination', async function (req, res, next){
+    try {
+        const {
+            userId, patientId, vaccineCode, vaccineName, manufacturer,
+            lotNumber, doseNumber, siteOfInjection, nextDoseDue, notes
+        } = req.body;
+        if (!patientId || !vaccineCode || !vaccineName) {
+            throw new Error('Missing patientId, vaccineCode or vaccineName');
+        }
+        const result = await invoke.invokeTransaction('addVaccination', {
+            patientId, vaccineCode, vaccineName, manufacturer,
+            lotNumber, doseNumber, siteOfInjection, nextDoseDue, notes
+        }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/getVaccinationsByPatient', async function (req, res, next){
+    try {
+        const { userId, patientId } = req.body;
+        if (!patientId) throw new Error('Missing patientId');
+        const result = await query.getQuery('getVaccinationsByPatient', { patientId }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/reportAdverseReaction', async function (req, res, next){
+    try {
+        const { userId, patientId, vaxId, reaction, severity, reportedAt } = req.body;
+        if (!patientId || !vaxId || !reaction) {
+            throw new Error('Missing patientId, vaxId or reaction');
+        }
+        const result = await invoke.invokeTransaction('reportAdverseReaction', {
+            patientId, vaxId, reaction, severity, reportedAt
+        }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
         next(error);
     }
 });
@@ -718,6 +859,90 @@ app.post('/getEmergencyLogs', async function (req, res, next){
         res.status(200).send({ success: true, data: result});
     } catch (error) {
         next(error);
+    }
+});
+
+// ===========================================================================================
+// IPFS ATTACHMENT - Upload file y te (X-quang, MRI, PDF) co encryption
+// ===========================================================================================
+
+// Upload: multipart/form-data voi field 'file' + body userId, patientId, recordId, fileType
+app.post('/uploadAttachment', upload.single('file'), async function (req, res, next){
+    try {
+        const { userId, patientId, recordId, fileType } = req.body;
+        if (!req.file) throw new Error('Missing file');
+        if (!userId || !patientId) throw new Error('Missing userId or patientId');
+
+        // 1. Encrypt + upload len IPFS
+        const { cid, plainHash, aesKeyHex, ivHex, authTagHex, size } =
+            await ipfsHelper.encryptAndUpload(req.file.buffer, req.file.originalname);
+
+        // 2. Register metadata qua chaincode (aes key vao PDC)
+        const result = await invoke.invokeTransaction('addAttachment', {
+            patientId,
+            recordId: recordId || null,
+            cid, plainHash,
+            fileName: req.file.originalname,
+            fileType: fileType || 'other',
+            size,
+            aesKeyHex, ivHex, authTagHex
+        }, userId);
+
+        res.status(200).send({ success: true, data: { cid, plainHash, size, result } });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Download: tai ciphertext tu IPFS, decrypt, verify hash, stream file goc ve client
+app.post('/downloadAttachment', async function (req, res, next){
+    try {
+        const { userId, patientId, recordId, attId } = req.body;
+        if (!userId || !patientId || !attId) throw new Error('Missing userId, patientId or attId');
+
+        // 1. Lay key decrypt tu chaincode (ACL check tai chaincode)
+        const metaRaw = await query.getQuery('getAttachmentDecryptionKey',
+            { patientId, recordId: recordId || null, attId }, userId);
+        const meta = typeof metaRaw === 'string' ? JSON.parse(metaRaw) : metaRaw;
+
+        if (!meta.aesKeyHex) {
+            throw new Error(`Access denied: no decryption key available for ${attId} (caller org not in PDC)`);
+        }
+
+        // 2. Download + decrypt + verify
+        const plaintext = await ipfsHelper.downloadAndDecrypt(
+            meta.cid, meta.aesKeyHex, meta.ivHex, meta.authTagHex, meta.plainHash
+        );
+
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(meta.fileName)}"`);
+        res.setHeader('X-Plain-Hash', meta.plainHash);
+        res.setHeader('X-CID', meta.cid);
+        res.send(plaintext);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/getAttachmentsByPatient', async function (req, res, next){
+    try {
+        const { userId, patientId, recordId } = req.body;
+        if (!patientId) throw new Error('Missing patientId');
+        const result = await query.getQuery('getAttachmentsByPatient',
+            { patientId, recordId: recordId || null }, userId);
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Health check IPFS node
+app.get('/ipfsStatus', async function (req, res, next){
+    try {
+        const v = await ipfsHelper.ipfsVersion();
+        res.status(200).send({ success: true, data: v });
+    } catch (error) {
+        res.status(503).send({ success: false, error: error.message });
     }
 });
 

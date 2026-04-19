@@ -258,6 +258,85 @@ router.get('/fhir/Claim/:patientId/:claimId', async (req, res, next) => {
 });
 
 // ============================================================
+// Helper: map internal Procedure -> FHIR R4 Procedure
+// ============================================================
+function toFhirProcedure(p) {
+    const categoryMap = {
+        surgery: { code: '387713003', display: 'Surgical procedure' },
+        endoscopy: { code: '423827005', display: 'Endoscopy' },
+        biopsy: { code: '86273004', display: 'Biopsy' },
+        intervention: { code: '277132007', display: 'Therapeutic procedure' },
+        minor: { code: '71388002', display: 'Procedure' },
+    };
+    const cat = categoryMap[p.category] || categoryMap.minor;
+
+    const statusMap = {
+        pending: 'in-progress',
+        success: 'completed',
+        complication: 'completed',
+        failed: 'stopped',
+    };
+
+    return {
+        resourceType: 'Procedure',
+        id: p.procId,
+        meta: { lastUpdated: p.updatedAt || p.timestamp },
+        status: statusMap[p.outcome] || 'completed',
+        category: {
+            coding: [{ system: 'http://snomed.info/sct', code: cat.code, display: cat.display }]
+        },
+        code: {
+            coding: [{
+                system: 'http://hl7.org/fhir/sid/icd-10-pcs',
+                code: p.procedureCode,
+                display: p.procedureName
+            }]
+        },
+        subject: { reference: `Patient/${p.patientId}` },
+        performedDateTime: p.performedDate,
+        performer: [
+            ...(p.performedBy ? [{
+                function: { coding: [{ code: 'primary' }] },
+                actor: { reference: `Practitioner/${p.performedBy}` }
+            }] : []),
+            ...((p.assistants || []).map(a => ({
+                function: { coding: [{ code: 'assistant' }] },
+                actor: { reference: `Practitioner/${a}` }
+            })))
+        ],
+        outcome: p.outcome ? { text: p.outcome } : undefined,
+        complication: (p.complications || []).map(c => ({ text: c })),
+        followUp: p.followUpPlan ? [{ text: p.followUpPlan }] : undefined,
+        note: p.notes ? [{ text: p.notes }] : undefined,
+        reasonReference: p.relatedRecordId
+            ? [{ reference: `Observation/${p.relatedRecordId}` }]
+            : undefined,
+    };
+}
+
+// ============================================================
+// GET /fhir/Procedure/:patientId/:procId
+// ============================================================
+router.get('/fhir/Procedure/:patientId/:procId', async (req, res, next) => {
+    try {
+        const { patientId, procId } = req.params;
+        const userId = req.query.userId || 'hospitalAdmin';
+        const all = await query.getQuery('getProceduresByPatient', { patientId }, userId);
+        const list = Array.isArray(all) ? all : (typeof all === 'string' ? JSON.parse(all || '[]') : []);
+        const proc = list.find(x => x.procId === procId);
+        if (!proc) {
+            return res.status(404).json({
+                resourceType: 'OperationOutcome',
+                issue: [{ severity: 'error', code: 'not-found', diagnostics: `Procedure ${procId} not found` }]
+            });
+        }
+        res.json(toFhirProcedure(proc));
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ============================================================
 // GET /fhir/Practitioner/:doctorId
 // ============================================================
 router.get('/fhir/Practitioner/:doctorId', async (req, res, next) => {
@@ -295,6 +374,7 @@ router.get('/fhir/metadata', (req, res) => {
                 { type: 'Patient', interaction: [{ code: 'read' }], operation: [{ name: '$everything', definition: 'http://hl7.org/fhir/OperationDefinition/Patient-everything' }] },
                 { type: 'Observation', interaction: [{ code: 'read' }] },
                 { type: 'MedicationRequest', interaction: [{ code: 'read' }] },
+                { type: 'Procedure', interaction: [{ code: 'read' }] },
                 { type: 'Claim', interaction: [{ code: 'read' }] },
                 { type: 'Practitioner', interaction: [{ code: 'read' }] },
             ],

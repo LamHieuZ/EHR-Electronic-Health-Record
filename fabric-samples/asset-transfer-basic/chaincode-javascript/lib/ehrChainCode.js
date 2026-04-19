@@ -162,7 +162,7 @@ class ehrChainCode extends Contract {
     getCollectionForHospital(hospitalId) {
         const map = {
             'hospitalAdmin': 'hospital1Collection',   // BV1 (Org1)
-            'hospital3Admin': 'hospital3Collection'   // BV3 (Org3)
+            'hospital2Admin': 'hospital2Collection'   // BV2 (Org3)
         };
         return map[hospitalId] || null;
     }
@@ -505,6 +505,145 @@ class ehrChainCode extends Contract {
         return ['mg', 'g', 'ml', 'mcg', 'IU', 'unit', 'tablet', 'capsule', 'drop', 'puff'];
     }
 
+    // ===========================================================================================
+    // DEMOGRAPHIC & CLINICAL VALIDATORS (Tier 1)
+    // ===========================================================================================
+
+    getValidGenders() { return ['male', 'female', 'other']; }
+    getValidBloodTypes() { return ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']; }
+    getValidVisitTypes() { return ['outpatient', 'inpatient', 'emergency', 'followup', 'consultation']; }
+    getValidInjectionSites() {
+        return ['left-arm', 'right-arm', 'left-thigh', 'right-thigh', 'left-deltoid', 'right-deltoid', 'oral', 'nasal'];
+    }
+
+    // Validate CVX code: 1-3 chu so (chuan CDC https://www2a.cdc.gov/vaccines/iis/iisstandards/vaccines.asp)
+    validateCvxCode(code) {
+        if (!code || typeof code !== 'string') return false;
+        return /^\d{1,3}$/.test(code);
+    }
+
+    // Validate ICD-10-PCS code: 7 ky tu, chu hoac so (chu cai I va O khong duoc dung de tranh nham voi 1, 0)
+    // Reference: https://www.cms.gov/Medicare/Coding/ICD10
+    // VD: "0DTJ4ZZ" (cat ruot thua noi soi), "02703ZZ" (nong mach vanh)
+    validateIcdPcsCode(code) {
+        if (!code || typeof code !== 'string') return false;
+        return /^[0-9A-HJ-NP-Z]{7}$/.test(code);
+    }
+
+    getValidProcedureCategories() {
+        return ['surgery', 'endoscopy', 'biopsy', 'intervention', 'minor'];
+    }
+
+    getValidAnesthesiaTypes() {
+        return ['general', 'local', 'spinal', 'sedation', 'none'];
+    }
+
+    getValidProcedureOutcomes() {
+        return ['pending', 'success', 'complication', 'failed'];
+    }
+
+    // Validate so CCCD VN: 12 chu so
+    validateIdCard(v) {
+        if (!v) return true;
+        return /^\d{12}$/.test(v);
+    }
+
+    // Validate so dien thoai VN: 10 so, bat dau bang 0
+    validatePhone(v) {
+        if (!v) return true;
+        return /^0\d{9}$/.test(v);
+    }
+
+    // Validate BHYT: 15 ky tu chu+so
+    validateBhyt(v) {
+        if (!v) return true;
+        return /^[A-Z0-9]{15}$/.test(v);
+    }
+
+    // Validate vitalSigns: moi truong la so, nam trong range hop ly
+    validateVitalSigns(vs) {
+        if (!vs || typeof vs !== 'object') return;
+        const checks = {
+            temperature: [30, 45],       // oC
+            pulse: [20, 250],            // bpm
+            spO2: [50, 100],             // %
+            weight: [0.5, 400],          // kg
+            height: [20, 250],           // cm
+            respiratoryRate: [5, 60]     // lan/phut
+        };
+        for (const [field, [min, max]] of Object.entries(checks)) {
+            if (vs[field] === undefined || vs[field] === null || vs[field] === '') continue;
+            const n = Number(vs[field]);
+            if (isNaN(n) || n < min || n > max) {
+                throw new Error(`Invalid ${field}: ${vs[field]}. Must be between ${min} and ${max}`);
+            }
+        }
+        // Huyet ap: "120/80" dang string
+        if (vs.bloodPressure) {
+            if (!/^\d{2,3}\/\d{2,3}$/.test(vs.bloodPressure)) {
+                throw new Error(`Invalid bloodPressure: ${vs.bloodPressure}. Format: "120/80"`);
+            }
+        }
+    }
+
+    // Merge cac field Tier 1 vao patient record (dung cho onboard va updateProfile)
+    applyPatientDemographics(data, input) {
+        const { gender, idCard, phone, email, bhytNumber, bloodType,
+                allergies, chronicConditions, emergencyContact, address } = input;
+
+        if (gender !== undefined) {
+            if (!this.getValidGenders().includes(gender)) {
+                throw new Error(`Invalid gender: ${gender}. Valid: ${this.getValidGenders().join(', ')}`);
+            }
+            data.gender = gender;
+        }
+        if (idCard !== undefined) {
+            if (idCard && !this.validateIdCard(idCard)) {
+                throw new Error(`Invalid idCard: must be 12 digits`);
+            }
+            data.idCard = idCard;
+        }
+        if (phone !== undefined) {
+            if (phone && !this.validatePhone(phone)) {
+                throw new Error(`Invalid phone: must start with 0 and have 10 digits`);
+            }
+            data.phone = phone;
+        }
+        if (email !== undefined) data.email = email;
+        if (bhytNumber !== undefined) {
+            if (bhytNumber && !this.validateBhyt(bhytNumber)) {
+                throw new Error(`Invalid BHYT: must be 15 alphanumeric uppercase characters`);
+            }
+            data.bhytNumber = bhytNumber;
+        }
+        if (bloodType !== undefined) {
+            if (bloodType && !this.getValidBloodTypes().includes(bloodType)) {
+                throw new Error(`Invalid bloodType: ${bloodType}. Valid: ${this.getValidBloodTypes().join(', ')}`);
+            }
+            data.bloodType = bloodType;
+        }
+        if (allergies !== undefined) {
+            if (!Array.isArray(allergies)) throw new Error('allergies must be an array');
+            data.allergies = allergies;
+        }
+        if (chronicConditions !== undefined) {
+            if (!Array.isArray(chronicConditions)) throw new Error('chronicConditions must be an array');
+            data.chronicConditions = chronicConditions;
+        }
+        if (emergencyContact !== undefined) {
+            if (emergencyContact && typeof emergencyContact !== 'object') {
+                throw new Error('emergencyContact must be an object {name, relationship, phone}');
+            }
+            data.emergencyContact = emergencyContact;
+        }
+        if (address !== undefined) {
+            if (address && typeof address !== 'object') {
+                throw new Error('address must be an object {street, ward, district, province}');
+            }
+            data.address = address;
+        }
+    }
+
     // Validate 1 loai thuoc trong don
     validateMedication(med) {
         if (!med.drugCode || !this.validateAtcCode(med.drugCode)) {
@@ -720,7 +859,8 @@ class ehrChainCode extends Contract {
 
     // Dang ky benh nhan vao ledger
     async onboardPatient(ctx, args) {
-        const { patientId, name, dob, city } = JSON.parse(args);
+        const input = JSON.parse(args);
+        const { patientId, name, dob, city } = input;
         const key = `patient-${patientId}`;
 
         const existing = await ctx.stub.getState(key);
@@ -733,9 +873,22 @@ class ehrChainCode extends Contract {
             name,
             dob,
             city,
+            gender: null,
+            idCard: null,
+            phone: null,
+            email: null,
+            bhytNumber: null,
+            bloodType: null,
+            allergies: [],
+            chronicConditions: [],
+            emergencyContact: null,
+            address: null,
             authorizedDoctors: [],
             timestamp: this.getTimestamp(ctx)
         };
+
+        // Ap dung cac field Tier 1 neu co trong input
+        this.applyPatientDemographics(patient, input);
 
         await ctx.stub.putState(key, Buffer.from(stringify(sortKeysRecursive(patient))));
         return `Patient ${patientId} registered`;
@@ -743,8 +896,9 @@ class ehrChainCode extends Contract {
 
     // Cap nhat thong tin ca nhan - moi role tu cap nhat chinh minh
     async updateProfile(ctx, args) {
-        const { name, dob, city, department, position, specialization, phone } = JSON.parse(args);
-        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
+        const input = JSON.parse(args);
+        const { name, dob, city, department, position, specialization, phone } = input;
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
 
         let key, data;
         if (role === 'patient') {
@@ -769,6 +923,11 @@ class ehrChainCode extends Contract {
         if (name !== undefined) data.name = name;
         if (dob !== undefined) data.dob = dob;
         if (city !== undefined) data.city = city;
+
+        if (role === 'patient') {
+            // Patient co the cap nhat day du Tier 1 demographics
+            this.applyPatientDemographics(data, input);
+        }
         if (role === 'doctor') {
             if (department !== undefined) data.department = department;
             if (position !== undefined) data.position = position;
@@ -854,7 +1013,8 @@ class ehrChainCode extends Contract {
     // Public part (metadata + hash) luu tren ledger; private part (diagnosis, prescription)
     // luu o PDC cua BV dieu tri -> peer BV khac khong nhan duoc du lieu goc.
     async addRecord(ctx, args) {
-        const { patientId, diagnosis, prescription } = JSON.parse(args);
+        const input = JSON.parse(args);
+        const { patientId, diagnosis, prescription, vitalSigns, visitType, chiefComplaint } = input;
         const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
 
         if (role !== 'doctor') {
@@ -877,6 +1037,12 @@ class ehrChainCode extends Contract {
         // Validate prescription theo chuan ATC code
         this.validatePrescription(prescription);
 
+        // Validate vitalSigns + visitType neu co
+        if (vitalSigns) this.validateVitalSigns(vitalSigns);
+        if (visitType && !this.getValidVisitTypes().includes(visitType)) {
+            throw new Error(`Invalid visitType: ${visitType}. Valid: ${this.getValidVisitTypes().join(', ')}`);
+        }
+
         const collection = this.getCollectionForHospital(hospitalId);
         if (!collection) {
             throw new Error(`No private data collection mapped for hospital ${hospitalId}`);
@@ -889,7 +1055,10 @@ class ehrChainCode extends Contract {
         const recordKey = ctx.stub.createCompositeKey('record', [patientId, recordId]);
 
         // Tach public / private
+        // Private: diagnosis, prescription, chiefComplaint (thong tin nhay cam)
+        // Public: vitalSigns, visitType (it nhay cam, huu ich cho thong ke cross-hospital)
         const privatePart = { diagnosis, prescription };
+        if (chiefComplaint !== undefined) privatePart.chiefComplaint = chiefComplaint;
         const privateHash = this.hashPrivatePart(privatePart);
 
         const publicRecord = {
@@ -899,6 +1068,8 @@ class ehrChainCode extends Contract {
             hospitalId: hospitalId || '',
             privateHash,
             privateCollection: collection,
+            visitType: visitType || 'outpatient',
+            vitalSigns: vitalSigns || null,
             timestamp,
             updatedAt: timestamp,
             version: 1
@@ -1027,9 +1198,9 @@ class ehrChainCode extends Contract {
 
     // Lay tat ca benh nhan
     async getAllPatients(ctx) {
-        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
-        if (role !== 'hospital') {
-            throw new Error('Only hospital admin can list all patients');
+        const { role, uuid: callerId, hospitalId: callerHospital } = this.getCallerAttributes(ctx);
+        if (!['hospital', 'doctor', 'pharmacy', 'insurance', 'agent'].includes(role)) {
+            throw new Error(`Role ${role} cannot list patients`);
         }
 
         const iterator = await ctx.stub.getStateByRange('', '');
@@ -1039,8 +1210,24 @@ class ehrChainCode extends Contract {
         while (!_res.done) {
             if (_res.value.key.startsWith('patient-')) {
                 const patient = JSON.parse(_res.value.value.toString());
-                // chi liet ke benh nhan co it nhat 1 bac si thuoc BV nay duoc cap quyen
-                if (await this.patientBelongsToHospital(ctx, patient, callerId)) {
+                let visible = false;
+
+                if (role === 'hospital') {
+                    // Hospital admin: benh nhan co >= 1 bac si thuoc BV minh duoc cap quyen
+                    visible = await this.patientBelongsToHospital(ctx, patient, callerId);
+                } else if (role === 'doctor') {
+                    // Doctor: chi benh nhan da grantAccess cho minh
+                    visible = Array.isArray(patient.authorizedDoctors) && patient.authorizedDoctors.includes(callerId);
+                } else if (role === 'pharmacy') {
+                    // Pharmacy: benh nhan co >= 1 bac si thuoc BV nay duoc cap quyen
+                    visible = await this.patientBelongsToHospital(ctx, patient, callerHospital);
+                } else if (role === 'insurance' || role === 'agent') {
+                    // Insurance/agent: thay TAT CA patient metadata (khong co diagnosis/prescription nho PDC ACL)
+                    // Can de iterate qua tung patient lay claim cua ho
+                    visible = true;
+                }
+
+                if (visible) {
                     results.push(patient);
                 }
             }
@@ -1066,16 +1253,33 @@ class ehrChainCode extends Contract {
         return JSON.stringify(results);
     }
 
-    // Lay tat ca bac si (hoac theo hospitalId)
+    // Lay danh sach bac si - ACL theo role:
+    //   - hospital admin: chi thay bac si cung BV minh (force theo callerId, bo qua args)
+    //   - doctor/pharmacy: chi thay dong nghiep cung BV
+    //   - patient: thay all (de tra cuu + grantAccess)
+    //   - khac: deny
     async getAllDoctors(ctx, args) {
-        const { hospitalId } = args ? JSON.parse(args) : {};
+        const { role, uuid: callerId, hospitalId: callerHospital } = this.getCallerAttributes(ctx);
+        const { hospitalId: argHospital } = args ? JSON.parse(args) : {};
+
+        let filterHospital = null;
+        if (role === 'hospital') {
+            filterHospital = callerId;             // callerId = hospitalId cua admin
+        } else if (role === 'doctor' || role === 'pharmacy') {
+            filterHospital = callerHospital;
+        } else if (role === 'patient') {
+            filterHospital = argHospital || null;  // patient co the filter tuy chon
+        } else {
+            throw new Error(`Role ${role} cannot list doctors`);
+        }
+
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
         let _res = await iterator.next();
         while (!_res.done) {
             if (_res.value.key.startsWith('doctor-')) {
                 const doctor = JSON.parse(_res.value.value.toString());
-                if (!hospitalId || doctor.hospitalId === hospitalId) {
+                if (!filterHospital || doctor.hospitalId === filterHospital) {
                     results.push(doctor);
                 }
             }
@@ -1085,16 +1289,29 @@ class ehrChainCode extends Contract {
         return JSON.stringify(results);
     }
 
-    // Lay tat ca nha thuoc (hoac theo hospitalId)
+    // Lay danh sach nha thuoc - ACL tuong tu getAllDoctors
     async getAllPharmacies(ctx, args) {
-        const { hospitalId } = args ? JSON.parse(args) : {};
+        const { role, uuid: callerId, hospitalId: callerHospital } = this.getCallerAttributes(ctx);
+        const { hospitalId: argHospital } = args ? JSON.parse(args) : {};
+
+        let filterHospital = null;
+        if (role === 'hospital') {
+            filterHospital = callerId;
+        } else if (role === 'doctor' || role === 'pharmacy') {
+            filterHospital = callerHospital;
+        } else if (role === 'patient') {
+            filterHospital = argHospital || null;
+        } else {
+            throw new Error(`Role ${role} cannot list pharmacies`);
+        }
+
         const iterator = await ctx.stub.getStateByRange('', '');
         const results = [];
         let _res = await iterator.next();
         while (!_res.done) {
             if (_res.value.key.startsWith('pharmacy-')) {
                 const pharmacy = JSON.parse(_res.value.value.toString());
-                if (!hospitalId || pharmacy.hospitalId === hospitalId) {
+                if (!filterHospital || pharmacy.hospitalId === filterHospital) {
                     results.push(pharmacy);
                 }
             }
@@ -1341,6 +1558,531 @@ class ehrChainCode extends Contract {
         }
 
         return JSON.stringify(results);
+    }
+
+    // ===========================================================================================
+    // IPFS ATTACHMENT - File y te (X-quang, MRI, PDF) luu ngoai chain
+    // ===========================================================================================
+    // Pattern:
+    //   - File encrypt AES-256-GCM truoc khi upload len IPFS
+    //   - Public ledger: { cid, plainHash, fileName, fileType, size, uploadedBy }
+    //   - PDC (hospital collection): { aesKeyHex, ivHex, authTagHex }
+    //   - BV khac dump IPFS chi lay duoc ciphertext; khong co key trong PDC -> khong decrypt
+    //   - Sha256(plaintext) tren chain -> verify integrity sau khi decrypt
+
+    getValidAttachmentTypes() {
+        return ['xray', 'mri', 'ct-scan', 'ultrasound', 'ecg', 'lab-report', 'prescription-pdf', 'discharge-summary', 'other'];
+    }
+
+    // Validate CID format (CIDv0: Qm... 46 ky tu; CIDv1: bafy... hoac bafk...)
+    validateCid(cid) {
+        if (!cid || typeof cid !== 'string') return false;
+        return /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[a-z0-9]{50,})$/.test(cid);
+    }
+
+    // Bac si/patient dang ky metadata file sau khi da upload len IPFS
+    // Doctor upload: encrypt_key luu trong PDC cua BV minh
+    // Transaction proposal chua cipher key - can truyen qua transient de strict nhat
+    // De demo don gian, nhan args truc tiep
+    async addAttachment(ctx, args) {
+        const input = JSON.parse(args);
+        const {
+            patientId, recordId,
+            cid, plainHash, fileName, fileType, size,
+            aesKeyHex, ivHex, authTagHex
+        } = input;
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
+
+        if (role !== 'doctor' && role !== 'patient') {
+            throw new Error('Only doctors or patients can attach files');
+        }
+
+        // Kiem tra patient + consent (neu doctor)
+        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
+        if (!patientJSON || patientJSON.length === 0) {
+            throw new Error(`Patient ${patientId} not found`);
+        }
+        const patient = JSON.parse(patientJSON.toString());
+
+        if (role === 'doctor') {
+            if (!patient.authorizedDoctors.includes(callerId)) {
+                throw new Error(`Doctor ${callerId} is not authorized for patient ${patientId}`);
+            }
+        } else if (role === 'patient') {
+            if (callerId !== patientId) {
+                throw new Error('Patients can only attach files to their own records');
+            }
+        }
+
+        // Validate
+        if (!this.validateCid(cid)) {
+            throw new Error(`Invalid CID: ${cid}`);
+        }
+        if (!plainHash || !/^[a-f0-9]{64}$/.test(plainHash)) {
+            throw new Error('plainHash must be a 64-char hex sha256');
+        }
+        if (!fileName || typeof fileName !== 'string' || fileName.length > 200) {
+            throw new Error('fileName required, max 200 chars');
+        }
+        if (fileType && !this.getValidAttachmentTypes().includes(fileType)) {
+            throw new Error(`Invalid fileType: ${fileType}. Valid: ${this.getValidAttachmentTypes().join(', ')}`);
+        }
+        const fsize = Number(size);
+        if (!fsize || fsize <= 0 || fsize > 100 * 1024 * 1024) {
+            throw new Error('size must be > 0 and <= 100MB');
+        }
+        if (!aesKeyHex || !ivHex || !authTagHex) {
+            throw new Error('Missing encryption metadata (aesKeyHex, ivHex, authTagHex)');
+        }
+
+        const collection = role === 'doctor' ? this.getCollectionForHospital(hospitalId) : null;
+        // Patient upload: fallback vao sharedClinicalCollection de BV cua ho doc duoc
+        const targetCollection = collection || 'sharedClinicalCollection';
+
+        const txId = ctx.stub.getTxID();
+        const attId = `ATT-${txId}`;
+        const timestamp = this.getTimestamp(ctx);
+
+        // Neu co recordId thi luu duoi record; neu khong thi standalone (link truc tiep patient)
+        const keyParts = recordId
+            ? ['attachment', patientId, recordId, attId]
+            : ['attachment', patientId, '_standalone', attId];
+        const attKey = ctx.stub.createCompositeKey(keyParts[0], keyParts.slice(1));
+
+        const publicMeta = {
+            attId,
+            patientId,
+            recordId: recordId || null,
+            cid,
+            plainHash,
+            fileName,
+            fileType: fileType || 'other',
+            size: fsize,
+            uploadedBy: callerId,
+            uploadedByRole: role,
+            hospitalId: hospitalId || null,
+            privateCollection: targetCollection,
+            timestamp
+        };
+
+        const privateKeys = {
+            attId,
+            aesKeyHex,
+            ivHex,
+            authTagHex
+        };
+
+        await ctx.stub.putState(attKey, Buffer.from(stringify(sortKeysRecursive(publicMeta))));
+        await ctx.stub.putPrivateData(targetCollection, attKey,
+            Buffer.from(stringify(sortKeysRecursive(privateKeys))));
+
+        return JSON.stringify({
+            message: `Attachment ${attId} registered`,
+            attId,
+            cid,
+            collection: targetCollection
+        });
+    }
+
+    // Lay AES key de decrypt file (chi tra ve neu caller thuoc PDC)
+    // Backend goi ham nay sau khi download ciphertext tu IPFS
+    async getAttachmentDecryptionKey(ctx, args) {
+        const { patientId, attId, recordId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
+        const keyParts = recordId
+            ? ['attachment', patientId, recordId, attId]
+            : ['attachment', patientId, '_standalone', attId];
+        const attKey = ctx.stub.createCompositeKey(keyParts[0], keyParts.slice(1));
+
+        const publicJSON = await ctx.stub.getState(attKey);
+        if (!publicJSON || publicJSON.length === 0) {
+            throw new Error(`Attachment ${attId} not found`);
+        }
+        const publicMeta = JSON.parse(publicJSON.toString());
+
+        // Thu doc private data tu collection goc, fallback shared
+        const collections = [publicMeta.privateCollection, 'sharedClinicalCollection'];
+        for (const c of collections) {
+            if (!c) continue;
+            const privBytes = await this.tryGetPrivateData(ctx, c, attKey);
+            if (privBytes) {
+                const privKeys = JSON.parse(privBytes.toString());
+                return JSON.stringify({
+                    ...publicMeta,
+                    ...privKeys,
+                    privateSource: c
+                });
+            }
+        }
+
+        // Caller thuoc ACL nhung khong nam trong collection -> chi tra metadata
+        return JSON.stringify({
+            ...publicMeta,
+            aesKeyHex: null,
+            privateDataVisible: false
+        });
+    }
+
+    // Liet ke attachments cua 1 record hoac toan bo cua patient
+    async getAttachmentsByPatient(ctx, args) {
+        const { patientId, recordId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
+        const partial = recordId
+            ? ['attachment', patientId, recordId]
+            : ['attachment', patientId];
+        const iterator = await ctx.stub.getStateByPartialCompositeKey(partial[0], partial.slice(1));
+
+        const results = [];
+        let _res = await iterator.next();
+        while (!_res.done) {
+            const meta = JSON.parse(_res.value.value.toString('utf8'));
+            // Chi tra ve metadata public, khong co key
+            results.push({
+                ...meta,
+                aesKeyHex: undefined,
+                ivHex: undefined,
+                authTagHex: undefined
+            });
+            _res = await iterator.next();
+        }
+        await iterator.close();
+
+        results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        return JSON.stringify(results);
+    }
+
+    // ===========================================================================================
+    // PROCEDURE HISTORY - Lich su phau thuat & thu thuat (chuan ICD-10-PCS)
+    // ===========================================================================================
+    // Luu PUBLIC tren ledger vi:
+    //   - Cross-hospital visibility can thiet khi chuyen vien / follow-up
+    //   - Emergency responder can biet benh nhan da mo gi
+    //   - Khong qua nhay cam nhu diagnosis detail
+    // ACL doc: patient chinh chu + doctor co consent + hospital admin lien ket
+
+    // Bac si them 1 procedure cho benh nhan (phau thuat, noi soi, sinh thiet, v.v.)
+    async addProcedure(ctx, args) {
+        const input = JSON.parse(args);
+        const {
+            patientId, procedureCode, procedureName, category,
+            performedDate, duration, assistants, department,
+            anesthesiaType, relatedRecordId, followUpPlan, notes
+        } = input;
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
+
+        if (role !== 'doctor') {
+            throw new Error('Only doctors can add procedure records');
+        }
+
+        // Kiem tra patient + consent
+        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
+        if (!patientJSON || patientJSON.length === 0) {
+            throw new Error(`Patient ${patientId} not found`);
+        }
+        const patient = JSON.parse(patientJSON.toString());
+        if (!patient.authorizedDoctors.includes(callerId)) {
+            throw new Error(`Doctor ${callerId} is not authorized for patient ${patientId}`);
+        }
+
+        // Validate
+        if (!procedureCode || !this.validateIcdPcsCode(procedureCode)) {
+            throw new Error(`Invalid ICD-10-PCS code: ${procedureCode}. Format: 7 chars A-Z (except I, O) or 0-9`);
+        }
+        if (!procedureName || typeof procedureName !== 'string' || procedureName.trim().length < 2) {
+            throw new Error('procedureName is required (min 2 chars)');
+        }
+        if (!category || !this.getValidProcedureCategories().includes(category)) {
+            throw new Error(`Invalid category: ${category}. Valid: ${this.getValidProcedureCategories().join(', ')}`);
+        }
+        if (anesthesiaType && !this.getValidAnesthesiaTypes().includes(anesthesiaType)) {
+            throw new Error(`Invalid anesthesiaType: ${anesthesiaType}. Valid: ${this.getValidAnesthesiaTypes().join(', ')}`);
+        }
+        if (duration !== undefined && duration !== null && duration !== '') {
+            const d = Number(duration);
+            if (isNaN(d) || d <= 0 || d > 1440) {
+                throw new Error('duration must be between 1 and 1440 minutes');
+            }
+        }
+        if (assistants !== undefined && !Array.isArray(assistants)) {
+            throw new Error('assistants must be an array of doctor uuids');
+        }
+
+        // Neu co relatedRecordId thi verify record ton tai + thuoc patient nay
+        if (relatedRecordId) {
+            const recordKey = ctx.stub.createCompositeKey('record', [patientId, relatedRecordId]);
+            const recordJSON = await ctx.stub.getState(recordKey);
+            if (!recordJSON || recordJSON.length === 0) {
+                throw new Error(`Related record ${relatedRecordId} not found for patient ${patientId}`);
+            }
+        }
+
+        const txId = ctx.stub.getTxID();
+        const procId = `PROC-${txId}`;
+        const timestamp = this.getTimestamp(ctx);
+
+        const procKey = ctx.stub.createCompositeKey('procedure', [patientId, procId]);
+
+        const procedure = {
+            procId,
+            patientId,
+            procedureCode,
+            procedureName: procedureName.trim(),
+            category,
+            performedDate: performedDate || timestamp,
+            duration: duration ? Number(duration) : null,
+            performedBy: callerId,
+            assistants: assistants || [],
+            hospitalId: hospitalId || '',
+            department: department || null,
+            anesthesiaType: anesthesiaType || 'none',
+            outcome: 'pending',     // outcome mac dinh la pending, update sau khi theo doi
+            complications: [],
+            relatedRecordId: relatedRecordId || null,
+            followUpPlan: followUpPlan || null,
+            notes: notes || null,
+            timestamp,
+            updatedAt: timestamp
+        };
+
+        await ctx.stub.putState(procKey, Buffer.from(stringify(sortKeysRecursive(procedure))));
+        return JSON.stringify({
+            message: `Procedure ${procId} recorded for patient ${patientId}`,
+            procId
+        });
+    }
+
+    // Cap nhat outcome + complications sau khi theo doi benh nhan
+    // Chi bac si da thuc hien (performedBy) hoac hospital admin cua BV so huu moi update duoc
+    async updateProcedureOutcome(ctx, args) {
+        const { patientId, procId, outcome, complications, followUpPlan, notes } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        if (!outcome || !this.getValidProcedureOutcomes().includes(outcome)) {
+            throw new Error(`Invalid outcome: ${outcome}. Valid: ${this.getValidProcedureOutcomes().join(', ')}`);
+        }
+        if (complications !== undefined && !Array.isArray(complications)) {
+            throw new Error('complications must be an array of strings');
+        }
+
+        const procKey = ctx.stub.createCompositeKey('procedure', [patientId, procId]);
+        const procJSON = await ctx.stub.getState(procKey);
+        if (!procJSON || procJSON.length === 0) {
+            throw new Error(`Procedure ${procId} not found for patient ${patientId}`);
+        }
+        const procedure = JSON.parse(procJSON.toString());
+
+        // ACL update:
+        //   - Bac si performedBy chinh la caller
+        //   - Hoac hospital admin cua BV so huu procedure
+        let canUpdate = false;
+        if (role === 'doctor' && callerId === procedure.performedBy) {
+            canUpdate = true;
+        } else if (role === 'hospital' && callerId === procedure.hospitalId) {
+            canUpdate = true;
+        }
+        if (!canUpdate) {
+            throw new Error(`${role} ${callerId} cannot update procedure ${procId} (not the performer or owning hospital)`);
+        }
+
+        procedure.outcome = outcome;
+        if (complications !== undefined) procedure.complications = complications;
+        if (followUpPlan !== undefined) procedure.followUpPlan = followUpPlan;
+        if (notes !== undefined) procedure.notes = notes;
+        procedure.updatedAt = this.getTimestamp(ctx);
+        procedure.updatedBy = callerId;
+
+        await ctx.stub.putState(procKey, Buffer.from(stringify(sortKeysRecursive(procedure))));
+        return JSON.stringify({
+            message: `Procedure ${procId} updated`,
+            outcome
+        });
+    }
+
+    // Lay lich su phau thuat cua 1 benh nhan
+    async getProceduresByPatient(ctx, args) {
+        const { patientId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
+        const iterator = await ctx.stub.getStateByPartialCompositeKey('procedure', [patientId]);
+        const results = [];
+        let _res = await iterator.next();
+        while (!_res.done) {
+            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            _res = await iterator.next();
+        }
+        await iterator.close();
+
+        // Sort theo performedDate giam dan (moi nhat truoc)
+        results.sort((a, b) => new Date(b.performedDate) - new Date(a.performedDate));
+        return JSON.stringify(results);
+    }
+
+    // Lay procedures lien ket voi 1 record cu the
+    async getProceduresByRecord(ctx, args) {
+        const { patientId, recordId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
+        const iterator = await ctx.stub.getStateByPartialCompositeKey('procedure', [patientId]);
+        const results = [];
+        let _res = await iterator.next();
+        while (!_res.done) {
+            const proc = JSON.parse(_res.value.value.toString('utf8'));
+            if (proc.relatedRecordId === recordId) {
+                results.push(proc);
+            }
+            _res = await iterator.next();
+        }
+        await iterator.close();
+        results.sort((a, b) => new Date(b.performedDate) - new Date(a.performedDate));
+        return JSON.stringify(results);
+    }
+
+    // ===========================================================================================
+    // VACCINATION HISTORY - Lich su tiem chung (chuan CVX code)
+    // ===========================================================================================
+    // Vaccination luu PUBLIC tren ledger vi:
+    //   - Phuc vu public health (cross-hospital visible giup phong chong dich)
+    //   - Khi chuyen vien/du lich, BV khac can biet da tiem gi de tranh trung
+    //   - Khong nhay cam nhu diagnosis/prescription
+    // ACL: patient chinh chu + doctor duoc cap quyen + hospital admin co lien ket
+    // Chi doctor co quyen moi them (cung rule voi addRecord)
+
+    // Bac si them mui tiem cho benh nhan
+    async addVaccination(ctx, args) {
+        const input = JSON.parse(args);
+        const {
+            patientId, vaccineCode, vaccineName, manufacturer,
+            lotNumber, doseNumber, siteOfInjection,
+            nextDoseDue, notes
+        } = input;
+        const { role, uuid: callerId, hospitalId } = this.getCallerAttributes(ctx);
+
+        if (role !== 'doctor') {
+            throw new Error('Only doctors can add vaccination records');
+        }
+
+        // Kiem tra patient va consent
+        const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
+        if (!patientJSON || patientJSON.length === 0) {
+            throw new Error(`Patient ${patientId} not found`);
+        }
+        const patient = JSON.parse(patientJSON.toString());
+        if (!patient.authorizedDoctors.includes(callerId)) {
+            throw new Error(`Doctor ${callerId} is not authorized for patient ${patientId}`);
+        }
+
+        // Validate
+        if (!vaccineCode || !this.validateCvxCode(vaccineCode)) {
+            throw new Error(`Invalid CVX code: ${vaccineCode}. Format: 1-3 digits`);
+        }
+        if (!vaccineName || typeof vaccineName !== 'string') {
+            throw new Error('vaccineName is required');
+        }
+        if (doseNumber !== undefined && (isNaN(Number(doseNumber)) || Number(doseNumber) < 1)) {
+            throw new Error('doseNumber must be a positive integer');
+        }
+        if (siteOfInjection && !this.getValidInjectionSites().includes(siteOfInjection)) {
+            throw new Error(`Invalid siteOfInjection: ${siteOfInjection}. Valid: ${this.getValidInjectionSites().join(', ')}`);
+        }
+
+        const txId = ctx.stub.getTxID();
+        const vaxId = `VAX-${txId}`;
+        const timestamp = this.getTimestamp(ctx);
+
+        const vaxKey = ctx.stub.createCompositeKey('vaccination', [patientId, vaxId]);
+
+        const vaccination = {
+            vaxId,
+            patientId,
+            vaccineCode,
+            vaccineName,
+            manufacturer: manufacturer || null,
+            lotNumber: lotNumber || null,
+            doseNumber: doseNumber !== undefined ? Number(doseNumber) : 1,
+            siteOfInjection: siteOfInjection || null,
+            administeredBy: callerId,
+            hospitalId: hospitalId || '',
+            administeredAt: timestamp,
+            nextDoseDue: nextDoseDue || null,
+            adverseReactions: [],
+            notes: notes || null,
+            timestamp
+        };
+
+        await ctx.stub.putState(vaxKey, Buffer.from(stringify(sortKeysRecursive(vaccination))));
+        return JSON.stringify({ message: `Vaccination ${vaxId} recorded for patient ${patientId}`, vaxId });
+    }
+
+    // Lay lich su tiem chung cua 1 benh nhan
+    async getVaccinationsByPatient(ctx, args) {
+        const { patientId } = JSON.parse(args);
+        await this.loadPatientWithAcl(ctx, patientId);
+
+        const iterator = await ctx.stub.getStateByPartialCompositeKey('vaccination', [patientId]);
+        const results = [];
+        let _res = await iterator.next();
+        while (!_res.done) {
+            results.push(JSON.parse(_res.value.value.toString('utf8')));
+            _res = await iterator.next();
+        }
+        await iterator.close();
+
+        // Sort theo administeredAt giam dan (moi nhat truoc)
+        results.sort((a, b) => new Date(b.administeredAt) - new Date(a.administeredAt));
+        return JSON.stringify(results);
+    }
+
+    // Benh nhan (hoac bac si) bao cao tac dung phu sau tiem
+    async reportAdverseReaction(ctx, args) {
+        const { patientId, vaxId, reaction, severity, reportedAt } = JSON.parse(args);
+        const { role, uuid: callerId } = this.getCallerAttributes(ctx);
+
+        if (!reaction || typeof reaction !== 'string' || reaction.trim().length < 3) {
+            throw new Error('Reaction description must be at least 3 characters');
+        }
+        const validSeverities = ['mild', 'moderate', 'severe', 'life-threatening'];
+        if (severity && !validSeverities.includes(severity)) {
+            throw new Error(`Invalid severity: ${severity}. Valid: ${validSeverities.join(', ')}`);
+        }
+
+        const vaxKey = ctx.stub.createCompositeKey('vaccination', [patientId, vaxId]);
+        const vaxJSON = await ctx.stub.getState(vaxKey);
+        if (!vaxJSON || vaxJSON.length === 0) {
+            throw new Error(`Vaccination ${vaxId} not found for patient ${patientId}`);
+        }
+        const vaccination = JSON.parse(vaxJSON.toString());
+
+        // ACL: patient chinh chu hoac doctor duoc cap quyen
+        if (role === 'patient') {
+            if (callerId !== patientId) throw new Error('Only the patient can report their own reactions');
+        } else if (role === 'doctor') {
+            const patientJSON = await ctx.stub.getState(`patient-${patientId}`);
+            if (!patientJSON || patientJSON.length === 0) throw new Error(`Patient ${patientId} not found`);
+            const patient = JSON.parse(patientJSON.toString());
+            if (!patient.authorizedDoctors.includes(callerId)) {
+                throw new Error(`Doctor ${callerId} is not authorized for patient ${patientId}`);
+            }
+        } else {
+            throw new Error(`Role ${role} cannot report adverse reactions`);
+        }
+
+        vaccination.adverseReactions = vaccination.adverseReactions || [];
+        vaccination.adverseReactions.push({
+            reaction: reaction.trim(),
+            severity: severity || 'mild',
+            reportedBy: callerId,
+            reportedByRole: role,
+            reportedAt: reportedAt || this.getTimestamp(ctx)
+        });
+        vaccination.updatedAt = this.getTimestamp(ctx);
+
+        await ctx.stub.putState(vaxKey, Buffer.from(stringify(sortKeysRecursive(vaccination))));
+        return JSON.stringify({
+            message: `Adverse reaction reported for vaccination ${vaxId}`,
+            totalReactions: vaccination.adverseReactions.length
+        });
     }
 
     // ===========================================================================================

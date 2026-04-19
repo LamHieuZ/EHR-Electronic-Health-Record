@@ -32,6 +32,28 @@ export const unshareRecord = (data) => api.post('/unshareRecord', data)
 export const shareAllRecords = (data) => api.post('/shareAllRecords', data)
 export const unshareAllRecords = (data) => api.post('/unshareAllRecords', data)
 
+// Vaccination history (CVX code)
+export const addVaccination = (data) => api.post('/addVaccination', data)
+export const getVaccinationsByPatient = (data) => api.post('/getVaccinationsByPatient', data)
+export const reportAdverseReaction = (data) => api.post('/reportAdverseReaction', data)
+
+// Procedure history (ICD-10-PCS)
+export const addProcedure = (data) => api.post('/addProcedure', data)
+export const updateProcedureOutcome = (data) => api.post('/updateProcedureOutcome', data)
+export const getProceduresByPatient = (data) => api.post('/getProceduresByPatient', data)
+export const getProceduresByRecord = (data) => api.post('/getProceduresByRecord', data)
+
+// IPFS attachments (file y tế - X-quang, MRI, PDF)
+export const uploadAttachment = (formData, onProgress) => api.post('/uploadAttachment', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' },
+  onUploadProgress: onProgress
+})
+export const getAttachmentsByPatient = (data) => api.post('/getAttachmentsByPatient', data)
+export const downloadAttachment = (data) => api.post('/downloadAttachment', data, {
+  responseType: 'blob'
+})
+export const ipfsStatus = () => api.get('/ipfsStatus')
+
 // Prescriptions
 export const getPrescriptionsByPatient = (data) => api.post('/getPrescriptionsByPatient', data)
 export const verifyPrescription = (data) => api.post('/verifyPrescription', data)

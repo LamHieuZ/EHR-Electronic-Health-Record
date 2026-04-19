@@ -1,0 +1,16 @@
+services:
+  ipfs:
+    image: ipfs/kubo:v0.29.0
+    container_name: ehr-ipfs
+    restart: unless-stopped
+    ports:
+      - "4001:4001"       # P2P swarm
+      - "5001:5001"       # HTTP API (backend dùng cái này)
+      - "8088:8080"       # Gateway HTTP (local preview, map sang 8088 tránh trùng Explorer)
+    volumes:
+      - ./ipfs-data:/data/ipfs
+      - ./ipfs-staging:/export
+    environment:
+      IPFS_PROFILE: server
+    # Cho phép backend trên host gọi API
+    command: ["daemon", "--migrate=true", "--agent-version-suffix=ehr"]

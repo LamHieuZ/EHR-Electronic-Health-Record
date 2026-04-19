@@ -29,6 +29,14 @@
   ::selection {
     @apply bg-primary-200 text-primary-900;
   }
+
+  /* Fix cho select dropdown options tren dark background (Register form,...)
+     Browser render options bang native style, khong ke thua class Tailwind cua parent select.
+     Class .dark-select ap vao the <select>, options se tu dong co nen toi + chu trang. */
+  .dark-select option {
+    background-color: #1f2937;
+    color: #f9fafb;
+  }
 }
 
 @layer components {

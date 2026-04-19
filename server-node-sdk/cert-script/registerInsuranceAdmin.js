@@ -1,9 +1,3 @@
-/*
- * Copyright IBM Corp. All Rights Reserved.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
 'use strict';
 
 const FabricCAServices = require('fabric-ca-client');
@@ -14,29 +8,64 @@ const { savePassword } = require('../helper');
 
 async function main() {
     try {
-        // load the network configuration
         const ccpPath = path.resolve(__dirname, '../..', 'fabric-samples', 'test-network', 'organizations', 'peerOrganizations', 'org2.example.com', 'connection-org2.json');
         const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
-        // Create a new CA client for interacting with the CA.
         const caInfo = ccp.certificateAuthorities['ca.org2.example.com'];
         const caTLSCACerts = caInfo.tlsCACerts.pem;
         const ca = new FabricCAServices(caInfo.url, { trustedRoots: caTLSCACerts, verify: false }, caInfo.caName);
 
-        // Create a new file system based wallet for managing identities.
         const walletPath = path.join(process.cwd(), 'wallet');
         const wallet = await Wallets.newFileSystemWallet(walletPath);
-        console.log(`Wallet path: ${walletPath}`);
 
-        // Check to see if we've already enrolled the admin user.
-        const identity = await wallet.get('insuranceAdmin');
-        if (identity) {
-            console.log('An identity for the admin user "insuranceAdmin" already exists in the wallet');
+        // Check if already registered
+        const existing = await wallet.get('insuranceAdmin');
+        if (existing) {
+            console.log('"insuranceAdmin" already exists in the wallet');
             return;
         }
 
-        // Enroll the admin user, and import the new identity into the wallet.
-        const enrollment = await ca.enroll({ enrollmentID: 'admin', enrollmentSecret: 'adminpw' });
+        // Step 1: Enroll CA bootstrap admin (temporary)
+        console.log('Enrolling Org2 CA bootstrap admin...');
+        const bootstrapEnroll = await ca.enroll({ enrollmentID: 'admin', enrollmentSecret: 'adminpw' });
+        const bootstrapIdentity = {
+            credentials: {
+                certificate: bootstrapEnroll.certificate,
+                privateKey: bootstrapEnroll.key.toBytes(),
+            },
+            mspId: 'Org2MSP',
+            type: 'X.509',
+        };
+        await wallet.put('_caAdmin2', bootstrapIdentity);
+
+        // Step 2: Register insuranceAdmin voi custom attrs
+        console.log('Registering insuranceAdmin with cert attributes...');
+        const provider = wallet.getProviderRegistry().getProvider(bootstrapIdentity.type);
+        const adminUser = await provider.getUserContext(bootstrapIdentity, '_caAdmin2');
+
+        const secret = await ca.register({
+            affiliation: 'org2.department1',
+            enrollmentID: 'insuranceAdmin',
+            role: 'client',
+            attrs: [
+                // hf.Registrar.Roles cho phep insuranceAdmin register user khac (agent)
+                { name: 'hf.Registrar.Roles', value: 'client', ecert: true },
+                { name: 'role', value: 'insurance', ecert: true },
+                { name: 'uuid', value: 'insuranceAdmin', ecert: true },
+                { name: 'companyId', value: 'insuranceAdmin', ecert: true },
+            ],
+        }, adminUser);
+
+        const enrollment = await ca.enroll({
+            enrollmentID: 'insuranceAdmin',
+            enrollmentSecret: secret,
+            attr_reqs: [
+                { name: 'role', optional: false },
+                { name: 'uuid', optional: false },
+                { name: 'companyId', optional: false },
+            ],
+        });
+
         const x509Identity = {
             credentials: {
                 certificate: enrollment.certificate,
@@ -46,10 +75,14 @@ async function main() {
             type: 'X.509',
         };
         await wallet.put('insuranceAdmin', x509Identity);
-        console.log('Successfully enrolled admin user "insuranceAdmin" and imported it into the wallet');
 
+        // Step 3: Remove temporary CA admin
+        await wallet.remove('_caAdmin2');
+        await savePassword('insuranceAdmin', '1234');
+
+        console.log('\nDone! "insuranceAdmin" registered with role=insurance and can register agents.');
     } catch (error) {
-        console.error(`Failed to enroll admin user "insuranceAdmin": ${error}`);
+        console.error(`Failed to setup insuranceAdmin: ${error}`);
         process.exit(1);
     }
 }

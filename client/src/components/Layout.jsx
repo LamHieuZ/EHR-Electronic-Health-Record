@@ -224,11 +224,15 @@ function getNavItems(user) {
   if (role === 'doctor') {
     items.push({ to: '/doctor', icon: FiHome, label: 'Bang dieu khien' })
     items.push({ to: '/records', icon: FiFileText, label: 'Ho so benh an' })
+    items.push({ to: '/procedures', icon: FiActivity, label: 'Phau thuat' })
+    items.push({ to: '/vaccinations', icon: FiShield, label: 'Tiem chung' })
     items.push({ to: '/prescriptions', icon: FiActivity, label: 'Don thuoc' })
     items.push({ to: '/emergency', icon: FiAlertTriangle, label: 'Truy cap khan cap' })
   } else if (role === 'patient') {
     items.push({ to: '/dashboard', icon: FiHome, label: 'Tong quan' })
     items.push({ to: '/records', icon: FiFileText, label: 'Ho so benh an' })
+    items.push({ to: '/procedures', icon: FiActivity, label: 'Phau thuat' })
+    items.push({ to: '/vaccinations', icon: FiShield, label: 'Tiem chung' })
     items.push({ to: '/access', icon: FiShield, label: 'Quyen truy cap' })
     items.push({ to: '/prescriptions', icon: FiActivity, label: 'Don thuoc' })
     items.push({ to: '/insurance', icon: FiDollarSign, label: 'Bao hiem' })
@@ -243,7 +247,7 @@ function getNavItems(user) {
     items.push({ to: '/insurance/reviewed', icon: FiFileText, label: 'Da xu ly' })
     items.push({ to: '/insurance/search', icon: FiSearch, label: 'Tra cuu' })
   } else if (role === 'admin' || role === 'hospital') {
-    if (['hospitalAdmin', 'hospital3Admin'].includes(userId)) {
+    if (['hospitalAdmin', 'hospital2Admin'].includes(userId)) {
       items.push({ to: '/admin/doctors', icon: FiActivity, label: 'Bac si' })
       items.push({ to: '/admin/pharmacies', icon: FiPackage, label: 'Nha thuoc' })
       items.push({ to: '/admin/ledger', icon: FiDatabase, label: 'So cai Blockchain' })

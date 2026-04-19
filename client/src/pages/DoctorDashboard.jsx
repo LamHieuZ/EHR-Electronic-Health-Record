@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { addRecord, updateRecord, getAllRecordsByPatientId, getMyPatients } from '../services/api'
+import { addRecord, updateRecord, getAllRecordsByPatientId, getMyPatients, uploadAttachment } from '../services/api'
 import { toast } from 'react-toastify'
-import { FiPlus, FiSearch, FiEdit, FiFileText, FiTrash2, FiUser, FiChevronDown, FiCalendar, FiActivity, FiPackage, FiClock } from 'react-icons/fi'
+import { FiPlus, FiSearch, FiEdit, FiFileText, FiTrash2, FiUser, FiChevronDown, FiCalendar, FiActivity, FiPackage, FiClock, FiPaperclip, FiX } from 'react-icons/fi'
+import PatientIdInput from '../components/PatientIdInput'
 
 const emptyMed = { code: '', name: '', strength: '', unit: 'mg', quantity: '1', frequency: '', route: 'oral', timing: '', duration: '', durationUnit: 'days' }
 
@@ -28,50 +29,7 @@ const timingOptions = [
   { value: 'as_needed', label: 'Khi cần' },
 ]
 
-function PatientIdInput({ value, onChange, patients, placeholder = 'patient001' }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  const filtered = patients.filter(
-    (p) => p.patientId.toLowerCase().includes(value.toLowerCase()) || (p.name && p.name.toLowerCase().includes(value.toLowerCase()))
-  )
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  return (
-    <div className="relative" ref={ref}>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
-        className="input-field"
-        placeholder={placeholder}
-        required
-        autoComplete="off"
-      />
-      {open && filtered.length > 0 && (
-        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-          {filtered.map((p) => (
-            <li
-              key={p.patientId}
-              onMouseDown={() => { onChange(p.patientId); setOpen(false) }}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-primary-50 cursor-pointer text-sm"
-            >
-              <FiUser className="text-primary-400 flex-shrink-0" />
-              <span className="font-medium text-gray-800">{p.patientId}</span>
-              {p.name && <span className="text-gray-400 truncate">— {p.name}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
+// PatientIdInput da tach ra components/PatientIdInput.jsx de dung chung voi cac page khac
 
 function DiagnosisFields({ form, setForm }) {
   return (
@@ -283,7 +241,19 @@ export default function DoctorDashboard() {
     diagDesc: '',
     notes: '',
     medications: [{ ...emptyMed }],
+    // Tier 1 - vital signs + visit info
+    visitType: 'outpatient',
+    chiefComplaint: '',
+    temperature: '',
+    bloodPressure: '',
+    pulse: '',
+    spO2: '',
+    weight: '',
+    height: '',
   })
+  const [showVitals, setShowVitals] = useState(false)
+  // Danh sach file dinh kem + loai tuong ung (upload SAU khi record tao xong)
+  const [pendingAttachments, setPendingAttachments] = useState([])   // [{ file, fileType }]
 
   // Update form
   const [updateForm, setUpdateForm] = useState({
@@ -426,13 +396,54 @@ export default function DoctorDashboard() {
     try {
       const diagnosis = buildDiagnosis(addForm)
       const prescription = buildPrescription(addForm.medications)
+
+      // Build vitalSigns - chi include cac field co gia tri
+      const vitalSigns = {}
+      if (addForm.temperature) vitalSigns.temperature = Number(addForm.temperature)
+      if (addForm.bloodPressure) vitalSigns.bloodPressure = addForm.bloodPressure
+      if (addForm.pulse) vitalSigns.pulse = Number(addForm.pulse)
+      if (addForm.spO2) vitalSigns.spO2 = Number(addForm.spO2)
+      if (addForm.weight) vitalSigns.weight = Number(addForm.weight)
+      if (addForm.height) vitalSigns.height = Number(addForm.height)
+
       const res = await addRecord({
         userId: user.userId,
         patientId: addForm.patientId,
         diagnosis,
         prescription,
+        vitalSigns: Object.keys(vitalSigns).length > 0 ? vitalSigns : undefined,
+        visitType: addForm.visitType || undefined,
+        chiefComplaint: addForm.chiefComplaint || undefined,
       })
       if (res.data.success || res.data.data) {
+        // Parse response de lay recordId cho upload attachments
+        let recordId = null
+        try {
+          const payload = typeof res.data.data === 'string'
+            ? JSON.parse(res.data.data)
+            : res.data.data
+          recordId = payload?.recordId
+        } catch {}
+
+        // Upload tat ca file dinh kem (neu co)
+        if (recordId && pendingAttachments.length > 0) {
+          toast.info(`Đang upload ${pendingAttachments.length} file...`)
+          for (const { file, fileType } of pendingAttachments) {
+            try {
+              const formData = new FormData()
+              formData.append('file', file)
+              formData.append('userId', user.userId)
+              formData.append('patientId', addForm.patientId)
+              formData.append('recordId', recordId)
+              formData.append('fileType', fileType)
+              await uploadAttachment(formData)
+            } catch (err) {
+              toast.error(`Upload ${file.name} thất bại: ${err.response?.data?.error || err.message}`)
+            }
+          }
+          toast.success(`Đã upload ${pendingAttachments.length} file`)
+        }
+
         toast.success('Thêm bệnh án thành công!')
         setAddForm({
           patientId: '',
@@ -440,12 +451,16 @@ export default function DoctorDashboard() {
           diagDesc: '',
           notes: '',
           medications: [{ ...emptyMed }],
+          visitType: 'outpatient',
+          chiefComplaint: '',
+          temperature: '', bloodPressure: '', pulse: '', spO2: '', weight: '', height: '',
         })
+        setPendingAttachments([])
       } else {
         toast.error(res.data.error || 'Thất bại')
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Lỗi kết nối')
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi kết nối')
     } finally {
       setLoading(false)
     }
@@ -542,11 +557,157 @@ export default function DoctorDashboard() {
               <PatientIdInput value={addForm.patientId} onChange={(v) => setAddForm({ ...addForm, patientId: v })} patients={myPatients} />
             </div>
 
+            {/* Visit type + chief complaint */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Loại khám</label>
+                <select
+                  value={addForm.visitType}
+                  onChange={(e) => setAddForm({ ...addForm, visitType: e.target.value })}
+                  className="input-field"
+                >
+                  <option value="outpatient">Ngoại trú</option>
+                  <option value="inpatient">Nội trú</option>
+                  <option value="emergency">Cấp cứu</option>
+                  <option value="followup">Tái khám</option>
+                  <option value="consultation">Tư vấn</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lý do đến khám</label>
+                <input
+                  type="text"
+                  value={addForm.chiefComplaint}
+                  onChange={(e) => setAddForm({ ...addForm, chiefComplaint: e.target.value })}
+                  className="input-field"
+                  placeholder="VD: Sốt 3 ngày, ho có đờm"
+                />
+              </div>
+            </div>
+
+            {/* Vital signs - collapsible */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowVitals(!showVitals)}
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                <FiActivity />
+                {showVitals ? 'Ẩn' : 'Thêm'} chỉ số sinh tồn
+              </button>
+              {showVitals && (
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Nhiệt độ (°C)</label>
+                    <input type="number" step="0.1" value={addForm.temperature}
+                      onChange={(e) => setAddForm({ ...addForm, temperature: e.target.value })}
+                      className="input-field text-sm" placeholder="36.5" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Huyết áp</label>
+                    <input type="text" value={addForm.bloodPressure}
+                      onChange={(e) => setAddForm({ ...addForm, bloodPressure: e.target.value })}
+                      className="input-field text-sm" placeholder="120/80" pattern="\d{2,3}/\d{2,3}" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Mạch (bpm)</label>
+                    <input type="number" value={addForm.pulse}
+                      onChange={(e) => setAddForm({ ...addForm, pulse: e.target.value })}
+                      className="input-field text-sm" placeholder="75" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">SpO2 (%)</label>
+                    <input type="number" value={addForm.spO2}
+                      onChange={(e) => setAddForm({ ...addForm, spO2: e.target.value })}
+                      className="input-field text-sm" placeholder="98" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Cân nặng (kg)</label>
+                    <input type="number" step="0.1" value={addForm.weight}
+                      onChange={(e) => setAddForm({ ...addForm, weight: e.target.value })}
+                      className="input-field text-sm" placeholder="60" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Chiều cao (cm)</label>
+                    <input type="number" value={addForm.height}
+                      onChange={(e) => setAddForm({ ...addForm, height: e.target.value })}
+                      className="input-field text-sm" placeholder="170" />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <hr className="border-gray-200" />
             <DiagnosisFields form={addForm} setForm={setAddForm} />
 
             <hr className="border-gray-200" />
             <MedicationFields medications={addForm.medications} formType="add" onAdd={addMed} onRemove={removeMed} onUpdate={updateMed} />
+
+            <hr className="border-gray-200" />
+            {/* File dinh kem: chon truoc, upload SAU khi record tao xong (can recordId) */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <FiPaperclip /> File đính kèm (tùy chọn)
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                File sẽ được mã hóa AES-256 và lưu lên IPFS. Upload tự động sau khi tạo bệnh án.
+              </p>
+
+              <div className="flex items-center gap-2 flex-wrap mb-3">
+                <select
+                  id="att-file-type"
+                  defaultValue="xray"
+                  className="input-field text-sm"
+                  style={{ maxWidth: 180 }}
+                >
+                  <option value="xray">X-quang</option>
+                  <option value="mri">MRI</option>
+                  <option value="ct-scan">CT Scan</option>
+                  <option value="ultrasound">Siêu âm</option>
+                  <option value="ecg">Điện tim</option>
+                  <option value="lab-report">Xét nghiệm</option>
+                  <option value="prescription-pdf">Đơn thuốc PDF</option>
+                  <option value="discharge-summary">Giấy ra viện</option>
+                  <option value="other">Khác</option>
+                </select>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf,.dcm"
+                  onChange={(e) => {
+                    const file = e.target.files[0]
+                    if (!file) return
+                    if (file.size > 100 * 1024 * 1024) { toast.error('File tối đa 100MB'); return }
+                    const fileType = document.getElementById('att-file-type').value
+                    setPendingAttachments([...pendingAttachments, { file, fileType }])
+                    e.target.value = ''
+                  }}
+                  className="text-sm flex-1"
+                />
+              </div>
+
+              {pendingAttachments.length > 0 && (
+                <ul className="space-y-1.5">
+                  {pendingAttachments.map((att, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      <FiPaperclip className="text-primary-500 flex-shrink-0" />
+                      <span className="font-medium text-gray-700 truncate flex-1">{att.file.name}</span>
+                      <span className="text-xs text-gray-500">{att.fileType}</span>
+                      <span className="text-xs text-gray-400">
+                        {(att.file.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPendingAttachments(pendingAttachments.filter((_, idx) => idx !== i))}
+                        className="text-red-500 hover:text-red-700"
+                        title="Xóa"
+                      >
+                        <FiX />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
               {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiPlus />}

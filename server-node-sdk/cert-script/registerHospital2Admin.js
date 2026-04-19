@@ -4,6 +4,7 @@ const FabricCAServices = require('fabric-ca-client');
 const { Wallets, Gateway } = require('fabric-network');
 const fs = require('fs');
 const path = require('path');
+const { savePassword } = require('../helper');
 
 async function main() {
     try {
@@ -18,9 +19,9 @@ async function main() {
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
         // Check if already registered
-        const existing = await wallet.get('hospital3Admin');
+        const existing = await wallet.get('hospital2Admin');
         if (existing) {
-            console.log('"hospital3Admin" already exists in the wallet');
+            console.log('"hospital2Admin" already exists in the wallet');
             return;
         }
 
@@ -37,24 +38,26 @@ async function main() {
         };
         await wallet.put('_caAdmin3', bootstrapIdentity);
 
-        // Step 2: Use bootstrap admin to register hospital3Admin with full attributes
-        console.log('Registering hospital3Admin with cert attributes...');
+        // Step 2: Use bootstrap admin to register hospital2Admin with full attributes
+        console.log('Registering hospital2Admin with cert attributes...');
         const provider = wallet.getProviderRegistry().getProvider(bootstrapIdentity.type);
         const adminUser = await provider.getUserContext(bootstrapIdentity, '_caAdmin3');
 
         const secret = await ca.register({
-            affiliation: 'org3.department1',
-            enrollmentID: 'hospital3Admin',
+            // Bo affiliation - CA Org3 default config khong co org3.department1
+            // Admin bootstrap co root affiliation nen user moi se thua ke root
+            enrollmentID: 'hospital2Admin',
             role: 'client',
             attrs: [
+                { name: 'hf.Registrar.Roles', value: 'client', ecert: true },
                 { name: 'role', value: 'hospital', ecert: true },
-                { name: 'uuid', value: 'hospital3Admin', ecert: true },
-                { name: 'hospitalId', value: 'hospital3Admin', ecert: true },
+                { name: 'uuid', value: 'hospital2Admin', ecert: true },
+                { name: 'hospitalId', value: 'hospital2Admin', ecert: true },
             ],
         }, adminUser);
 
         const enrollment = await ca.enroll({
-            enrollmentID: 'hospital3Admin',
+            enrollmentID: 'hospital2Admin',
             enrollmentSecret: secret,
             attr_reqs: [
                 { name: 'role', optional: false },
@@ -71,26 +74,27 @@ async function main() {
             mspId: 'Org3MSP',
             type: 'X.509',
         };
-        await wallet.put('hospital3Admin', x509Identity);
+        await wallet.put('hospital2Admin', x509Identity);
 
         // Step 3: Remove temporary CA admin
         await wallet.remove('_caAdmin3');
+        await savePassword('hospital2Admin', '1234');
 
         // Step 4: Onboard hospital to blockchain
         console.log('Onboarding Org3 hospital to blockchain...');
         const gateway = new Gateway();
-        await gateway.connect(ccp, { wallet, identity: 'hospital3Admin', discovery: { enabled: true, asLocalhost: true } });
+        await gateway.connect(ccp, { wallet, identity: 'hospital2Admin', discovery: { enabled: true, asLocalhost: true } });
         const network = await gateway.getNetwork('mychannel');
         const contract = network.getContract('ehrChainCode');
-        const args = { hospitalId: 'hospital3Admin', name: 'Benh Vien Org3', city: 'Ha Noi' };
+        const args = { hospitalId: 'hospital2Admin', name: 'Benh Vien 2', city: 'Ha Noi' };
         const res = await contract.submitTransaction('onboardHospital', JSON.stringify(args));
         console.log('\n=== Onboard Org3 Hospital success ===\n', res.toString());
         gateway.disconnect();
 
-        console.log('\nDone! "hospital3Admin" can now register users AND submit chaincode.');
+        console.log('\nDone! "hospital2Admin" can now register users AND submit chaincode.');
 
     } catch (error) {
-        console.error(`Failed to setup hospital3Admin: ${error}`);
+        console.error(`Failed to setup hospital2Admin: ${error}`);
         process.exit(1);
     }
 }
